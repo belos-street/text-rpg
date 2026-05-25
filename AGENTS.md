@@ -10,6 +10,30 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 基于 Next.js 16 + TypeScript 的 AI 驱动文字冒险游戏引擎。代码与故事内容完全解耦——故事数据存放在 `game-data/` 目录（不纳入版本控制），代码通过 `src/lib/game-data.ts` 动态读取。
 
+## 技术栈
+
+| 类别 | 技术 | 版本/说明 |
+|------|------|----------|
+| 运行时 | Node.js | 18+ |
+| 包管理器 | **Bun** | ⚠️ 不要使用 npm/yarn/pnpm |
+| 框架 | Next.js | 16.2.6 (App Router, Turbopack) |
+| 语言 | TypeScript | 严格模式 |
+| UI 组件 | Radix UI + shadcn/ui | class-variance-authority 变体系统 |
+| 样式 | Tailwind CSS 4 | `@import "tailwindcss"`, `@theme inline` |
+| 图标 | Lucide React | `lucide-react` |
+| AI SDK | OpenAI SDK | 兼容 DeepSeek/Mimo 等 API |
+| 数据存储 | JSON 文件 | `data/` 目录，无需数据库 |
+
+**常用命令（全部使用 bun）：**
+
+```bash
+bun dev          # 启动开发服务器（Turbopack）
+bun run build    # 生产构建
+bun run lint     # ESLint 检查
+bun add <pkg>    # 安装依赖
+bun remove <pkg> # 移除依赖
+```
+
 ## 项目目录结构
 
 ```

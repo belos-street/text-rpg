@@ -3,6 +3,7 @@
 import { Heart, Package, BookOpen } from "lucide-react"
 import type { Relation, InventoryItem, MemoryItem, AffectionStage } from "@/types"
 import { getAffectionStageLabel } from "@/lib/affection"
+import { cn } from "@/lib/utils"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
@@ -17,10 +18,21 @@ interface SidebarProps {
 }
 
 export function Sidebar({ relations, inventory, memories, harmony, open, affectionStages = [] }: SidebarProps) {
-  if (!open) return null
-
   return (
-    <div className="w-72 border-l border-zinc-800 bg-zinc-950/90 backdrop-blur flex flex-col">
+    <>
+      {open && (
+        <div
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 md:hidden"
+          onClick={() => {}}
+        />
+      )}
+      <div
+        className={cn(
+          "w-72 border-l border-zinc-800 bg-zinc-950/90 backdrop-blur flex flex-col transition-transform duration-300",
+          "fixed right-0 top-0 bottom-0 z-50 md:static md:z-0",
+          open ? "translate-x-0" : "translate-x-full md:hidden",
+        )}
+      >
       <Tabs defaultValue="relations" className="flex-1 flex flex-col">
         <TabsList className="mx-3 mt-3">
           <TabsTrigger value="relations" className="flex-1 gap-1">
@@ -40,7 +52,7 @@ export function Sidebar({ relations, inventory, memories, harmony, open, affecti
         <TabsContent value="relations" className="flex-1 px-3 mt-2">
           <div className="space-y-2">
             <div className="flex items-center justify-between text-xs text-zinc-500 mb-2">
-              <span>后宫和睦度</span>
+              <span>好感度</span>
               <span className={harmony >= 60 ? "text-pink-400" : harmony >= 40 ? "text-yellow-400" : "text-red-400"}>
                 {harmony}/100
               </span>
@@ -124,6 +136,7 @@ export function Sidebar({ relations, inventory, memories, harmony, open, affecti
           </ScrollArea>
         </TabsContent>
       </Tabs>
-    </div>
+      </div>
+    </>
   )
 }

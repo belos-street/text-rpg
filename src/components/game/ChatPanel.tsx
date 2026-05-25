@@ -48,13 +48,14 @@ export function ChatPanel({ messages, isStreaming, currentStreamContent, charact
         {displayedMessages.map((msg, i) => (
           <div
             key={i}
-            className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+            className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"} animate-message-enter`}
+            style={{ animationDelay: `${Math.min(i * 0.04, 0.3)}s` }}
           >
             <div
               className={`max-w-[85%] rounded-2xl px-4 py-3 ${
                 msg.role === "user"
-                  ? "bg-primary/20 text-primary-foreground rounded-br-md"
-                  : "bg-zinc-800/50 text-zinc-100 rounded-bl-md border border-zinc-700/50"
+                  ? "bg-primary/20 text-primary-foreground rounded-br-md shadow-[0_0_0_1px_rgba(94,106,210,0.2),0_2px_8px_rgba(0,0,0,0.3)]"
+                  : "bg-zinc-800/50 text-zinc-100 rounded-bl-md border border-zinc-700/50 shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_2px_8px_rgba(0,0,0,0.3)]"
               }`}
             >
               {msg.role === "user" ? (
@@ -73,10 +74,10 @@ export function ChatPanel({ messages, isStreaming, currentStreamContent, charact
 
         {isStreaming && currentStreamContent && (
           <div className="flex justify-start">
-            <div className="max-w-[85%] rounded-2xl rounded-bl-md border border-zinc-700/50 bg-zinc-800/50 px-4 py-3">
+            <div className="max-w-[85%] rounded-2xl rounded-bl-md border border-zinc-700/50 bg-zinc-800/50 px-4 py-3 shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_2px_8px_rgba(0,0,0,0.3)]">
               <span className="whitespace-pre-wrap text-sm leading-relaxed">
                 <NarrativeText text={currentStreamContent} characterEmoji={characterEmoji} />
-                <span className="inline-block w-1.5 h-4 bg-primary/70 ml-0.5 animate-pulse" />
+                <span className="inline-block w-1.5 h-4 bg-primary/70 ml-0.5 animate-stream-cursor" />
               </span>
             </div>
           </div>

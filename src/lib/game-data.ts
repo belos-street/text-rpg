@@ -133,37 +133,6 @@ export function loadCombatTable(): string {
   return readMdFile(path.join(GAME_DATA_DIR, "09_判定数值表", "combat.md"));
 }
 
-export function loadAllGameData(): string {
-  return [
-    "===== 全局游戏规则 =====",
-    loadCoreRules(),
-    "===== 世界观背景 =====",
-    loadWorldSetting(),
-    "===== 主角设定 =====",
-    loadProtagonist(),
-    "===== 女主角们 =====",
-    loadHeroines(),
-    "===== 其他NPC =====",
-    loadNPCs(),
-    "===== 主线剧情 =====",
-    loadMainQuest(),
-    "===== 支线剧情 =====",
-    loadSideStories(),
-    "===== 结局分支 =====",
-    loadEndings(),
-    "===== 场景地图 =====",
-    loadLocations(),
-    "===== 道具系统 =====",
-    loadItems(),
-    "===== 技能系统 =====",
-    loadSkills(),
-    "===== 好感度判定 =====",
-    loadAffectionTable(),
-    "===== 战斗判定 =====",
-    loadCombatTable(),
-  ].join("\n\n");
-}
-
 export function loadEssentialGameData(): string {
   return [
     "===== 全局游戏规则（核心，必须遵守）=====",

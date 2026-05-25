@@ -9,37 +9,16 @@ import {
   getConversation,
   summarizeConversation,
 } from "@/lib/storage";
-import type { SaveData, GameUpdate, Choice, GameEvent, Message } from "@/types";
+import {
+  parseGameUpdate,
+  extractNarration,
+  extractChoices,
+} from "@/lib/parser";
+import { getAffectionStage } from "@/lib/affection";
+import { generateId } from "@/lib/utils";
+import type { SaveData, GameEvent, Message } from "@/types";
 
 export const runtime = "nodejs";
-
-function parseGameUpdate(text: string): GameUpdate | null {
-  const jsonMatch = text.match(/\{[\s\S]*"type"\s*:\s*"game_update"[\s\S]*\}/);
-  if (!jsonMatch) return null;
-  try {
-    return JSON.parse(jsonMatch[0]) as GameUpdate;
-  } catch {
-    return null;
-  }
-}
-
-function extractNarration(text: string): string {
-  const parsed = parseGameUpdate(text);
-  if (parsed?.narration) return parsed.narration;
-  const cleaned = text
-    .replace(/```json[\s\S]*?```/g, "")
-    .replace(/```[\s\S]*?```/g, "")
-    .trim();
-  return cleaned || text;
-}
-
-function extractChoices(text: string): Choice[] {
-  const parsed = parseGameUpdate(text);
-  if (parsed?.choices && parsed.choices.length > 0) {
-    return parsed.choices;
-  }
-  return [];
-}
 
 export async function POST(req: NextRequest) {
   if (!checkConfig()) {
@@ -181,18 +160,7 @@ export async function POST(req: NextRequest) {
                 return {
                   ...r,
                   affection: newAffection,
-                  stage:
-                    newAffection <= 20
-                      ? "stranger"
-                      : newAffection <= 40
-                        ? "acquainted"
-                        : newAffection <= 60
-                          ? "friend"
-                          : newAffection <= 80
-                            ? "intimate"
-                            : newAffection <= 95
-                              ? "close"
-                              : "lover",
+                  stage: getAffectionStage(newAffection),
                 };
               }
               return r;
@@ -247,7 +215,7 @@ export async function POST(req: NextRequest) {
               updateData.memories = [
                 ...freshSave.memories,
                 {
-                  id: Math.random().toString(36).substring(2),
+                  id: generateId(),
                   type: event.type,
                   content: event.content,
                   importance: event.importance,

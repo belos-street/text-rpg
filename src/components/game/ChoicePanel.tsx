@@ -23,7 +23,7 @@ export function ChoicePanel({ choices, onChoice, disabled }: ChoicePanelProps) {
             <Button
               key={choice.id}
               variant={VARIANT_MAP[i % VARIANT_MAP.length]}
-              className="justify-start h-auto py-3 px-4 text-sm text-left whitespace-normal break-words"
+              className="justify-start h-auto py-3 px-4 text-sm text-left whitespace-normal break-words hover:shadow-[0_0_20px_rgba(94,106,210,0.15)]"
               onClick={() => onChoice(choice.id)}
               disabled={disabled}
             >

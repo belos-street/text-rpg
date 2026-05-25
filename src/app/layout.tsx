@@ -1,9 +1,12 @@
 import type { Metadata } from "next"
+import { loadStoryConfig } from "@/lib/game-data"
 import "./globals.css"
 
+const config = loadStoryConfig()
+
 export const metadata: Metadata = {
-  title: "异世界后宫物语 - AI文字RPG",
-  description: "AI驱动的异世界文字冒险游戏",
+  title: `${config.title} - AI文字RPG`,
+  description: config.subtitle || "AI驱动的文字冒险游戏",
 }
 
 export default function RootLayout({
@@ -13,7 +16,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-CN">
-      <body className="min-h-screen bg-zinc-950 text-zinc-100 antialiased">
+      <body className="min-h-screen bg-transparent text-zinc-100 antialiased">
         {children}
       </body>
     </html>

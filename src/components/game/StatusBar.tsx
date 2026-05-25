@@ -57,16 +57,13 @@ export function StatusBar({ state }: StatusBarProps) {
       <div className="flex gap-3 px-4 pb-2">
         <div className="flex-1 h-1.5 rounded-full bg-zinc-800 overflow-hidden">
           <div
-            className={cn(
-              "h-full rounded-full transition-all duration-500",
-              hpPercent > 50 ? "bg-red-500" : hpPercent > 25 ? "bg-orange-500" : "bg-red-600",
-            )}
+            className="h-full rounded-full transition-all duration-500 bg-gradient-to-r from-red-600 to-red-400"
             style={{ width: `${hpPercent}%` }}
           />
         </div>
         <div className="flex-1 h-1.5 rounded-full bg-zinc-800 overflow-hidden">
           <div
-            className="h-full rounded-full bg-blue-500 transition-all duration-500"
+            className="h-full rounded-full transition-all duration-500 bg-gradient-to-r from-blue-600 to-blue-400"
             style={{ width: `${mpPercent}%` }}
           />
         </div>

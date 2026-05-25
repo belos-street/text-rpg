@@ -15,6 +15,17 @@ export async function GET() {
       max: s.max,
       label: s.label,
     })),
+    initialState: {
+      hp: config.initialState.hp,
+      maxHp: config.initialState.maxHp,
+      mp: config.initialState.mp,
+      maxMp: config.initialState.maxMp,
+      gold: config.initialState.gold,
+      location: config.initialState.location,
+      chapter: config.initialState.chapter,
+      day: config.initialState.day,
+      time: config.initialState.time,
+    },
   };
   return Response.json(clientConfig);
 }

@@ -1,23 +1,26 @@
-"use client"
+'use client'
 
-import { useState, useRef, useCallback, useEffect } from "react"
-import { Save, Menu, Play, MapPin, Calendar, Heart } from "lucide-react"
-import { StatusBar } from "@/components/game/StatusBar"
-import { ChatPanel } from "@/components/game/ChatPanel"
-import { ChoicePanel } from "@/components/game/ChoicePanel"
-import { InputPanel } from "@/components/game/InputPanel"
-import { Sidebar } from "@/components/game/Sidebar"
-import { Button } from "@/components/ui/button"
+import { useState, useRef, useCallback, useEffect } from 'react'
+import { Save, Menu } from 'lucide-react'
+import { StatusBar } from '@/components/game/StatusBar'
+import { ChatPanel } from '@/components/game/ChatPanel'
+import { ChoicePanel } from '@/components/game/ChoicePanel'
+import { InputPanel } from '@/components/game/InputPanel'
+import { Sidebar } from '@/components/game/Sidebar'
+import { TitleScreen } from '@/components/game/TitleScreen'
+import { DeleteConfirmDialog } from '@/components/game/DeleteConfirmDialog'
+import { useStreamChat } from '@/hooks/use-stream-chat'
+import { extractNarration, extractChoices } from '@/lib/parser'
+import { getAffectionStage } from '@/lib/affection'
+import { generateId } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogDescription,
-} from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
-import { ScrollArea } from "@/components/ui/scroll-area"
+} from '@/components/ui/dialog'
 import type {
   PlayerState,
   Choice,
@@ -27,85 +30,31 @@ import type {
   MemoryItem,
   SaveMeta,
   AffectionStage,
-} from "@/types"
-
-function extractNarration(text: string): string {
-  try {
-    const startIdx = text.indexOf("{")
-    if (startIdx === -1) return text
-    let depth = 0
-    let jsonEnd = -1
-    for (let i = startIdx; i < text.length; i++) {
-      if (text[i] === "{") depth++
-      else if (text[i] === "}") {
-        depth--
-        if (depth === 0) {
-          jsonEnd = i
-          break
-        }
-      }
-    }
-    if (jsonEnd === -1) return text
-    const jsonStr = text.slice(startIdx, jsonEnd + 1)
-    const parsed = JSON.parse(jsonStr)
-    if (parsed.narration) return parsed.narration
-  } catch {}
-  const cleaned = text
-    .replace(/```json[\s\S]*?```/g, "")
-    .replace(/```[\s\S]*?```/g, "")
-    .trim()
-  return cleaned || text
-}
-
-function extractChoices(text: string): { id: string; text: string }[] {
-  try {
-    const startIdx = text.indexOf("{")
-    if (startIdx === -1) return []
-    let depth = 0
-    let jsonEnd = -1
-    for (let i = startIdx; i < text.length; i++) {
-      if (text[i] === "{") depth++
-      else if (text[i] === "}") {
-        depth--
-        if (depth === 0) {
-          jsonEnd = i
-          break
-        }
-      }
-    }
-    if (jsonEnd === -1) return []
-    const jsonStr = text.slice(startIdx, jsonEnd + 1)
-    const parsed = JSON.parse(jsonStr)
-    if (parsed.choices && Array.isArray(parsed.choices)) return parsed.choices
-  } catch {}
-  return []
-}
+} from '@/types'
 
 const DEFAULT_PLAYER_STATE: PlayerState = {
-  playerName: "",
-  hp: 100,
-  maxHp: 100,
-  mp: 50,
-  maxMp: 50,
-  gold: 50,
-  location: "未知森林",
-  chapter: "第一章：觉醒",
+  playerName: '',
+  hp: 0,
+  maxHp: 0,
+  mp: 0,
+  maxMp: 0,
+  gold: 0,
+  location: '',
+  chapter: '',
   day: 1,
-  time: "早晨",
+  time: '',
 }
 
 export default function GamePage() {
   const [gameStarted, setGameStarted] = useState(false)
-  const [nameInput, setNameInput] = useState("")
+  const [nameInput, setNameInput] = useState('')
   const [saveId, setSaveId] = useState<string | null>(null)
-  const [playerState, setPlayerState] = useState<PlayerState>(
-    DEFAULT_PLAYER_STATE,
-  )
+  const [playerState, setPlayerState] = useState<PlayerState>(DEFAULT_PLAYER_STATE)
   const [messages, setMessages] = useState<Message[]>([])
   const [choices, setChoices] = useState<Choice[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
-  const [currentStreamContent, setCurrentStreamContent] = useState("")
+  const [currentStreamContent, setCurrentStreamContent] = useState('')
   const [showSidebar, setShowSidebar] = useState(false)
   const [relations, setRelations] = useState<Relation[]>([])
   const [inventory, setInventory] = useState<InventoryItem[]>([])
@@ -120,32 +69,123 @@ export default function GamePage() {
   const [characterEmoji, setCharacterEmoji] = useState<Record<string, string>>({})
   const [affectionStages, setAffectionStages] = useState<AffectionStage[]>([])
   const [storyConfig, setStoryConfig] = useState({
-    title: "异世界后宫物语",
-    subtitle: "AI 驱动的异世界文字冒险——你的选择，改变一切",
-    loadingText: "命运的齿轮开始转动……",
-    emptyChatTitle: "冒险即将开始...",
-    emptyChatSubtitle: "输入你的名字，开启异世界之旅",
+    title: '加载中',
+    subtitle: '',
+    loadingText: '加载中……',
+    emptyChatTitle: '加载中',
+    emptyChatSubtitle: '',
   })
-  const abortRef = useRef<AbortController | null>(null)
+
+  const streamCallbacks = useRef({
+    onStreamStart: () => {
+      setIsStreaming(true)
+      setIsLoading(true)
+      setCurrentStreamContent('')
+      setChoices([])
+    },
+    onStreamContent: (content: string) => {
+      if (content === '') {
+        setIsLoading(false)
+      } else {
+        setCurrentStreamContent(content)
+      }
+    },
+    onChoices: (c: Choice[]) => setChoices(c),
+    onNewMemory: (mem: Omit<MemoryItem, 'id' | 'createdAt'>) => {
+      setMemories((prev) => {
+        const exists = prev.some(
+          (m) => m.type === mem.type && m.content === mem.content,
+        )
+        if (exists) return prev
+        return [
+          ...prev,
+          {
+            id: generateId(),
+            type: mem.type,
+            content: mem.content,
+            importance: mem.importance,
+            createdAt: new Date().toISOString(),
+          },
+        ]
+      })
+    },
+    onStateChanges: (changes: Partial<PlayerState>) => {
+      setPlayerState((prev) => ({
+        ...prev,
+        hp: changes.hp != null ? Math.max(0, Math.min(prev.maxHp, changes.hp)) : prev.hp,
+        mp: changes.mp != null ? Math.max(0, Math.min(prev.maxMp, changes.mp)) : prev.mp,
+        gold: changes.gold != null ? Math.max(0, changes.gold) : prev.gold,
+        location: changes.location ?? prev.location,
+        chapter: changes.chapter ?? prev.chapter,
+        day: changes.day != null ? changes.day : prev.day,
+        time: changes.time ?? prev.time,
+      }))
+    },
+    onAffectionChanges: (changes: Record<string, number>) => {
+      setRelations((prev) =>
+        prev.map((r) => {
+          const change = changes[r.characterId]
+          if (change) {
+            const newAffection = Math.max(0, Math.min(100, r.affection + change))
+            return { ...r, affection: newAffection, stage: getAffectionStage(newAffection) }
+          }
+          return r
+        }),
+      )
+    },
+    onHarmonyChange: (change: number) => {
+      setHarmony((prev) => Math.max(0, Math.min(100, prev + change)))
+    },
+    onNewItems: (items: { id: string; name: string }[]) => {
+      setInventory((prev) => {
+        const updated = [...prev]
+        for (const item of items) {
+          const existing = updated.find((i) => i.itemId === item.id)
+          if (existing) {
+            existing.quantity += 1
+          } else {
+            updated.push({ itemId: item.id, itemName: item.name, quantity: 1 })
+          }
+        }
+        return updated
+      })
+    },
+    onMessage: (msg: Message) => {
+      setMessages((prev) => [...prev, msg])
+    },
+    onError: (msg: Message) => {
+      setMessages((prev) => [...prev, msg])
+    },
+    onStreamEnd: () => {
+      setIsStreaming(false)
+      setIsLoading(false)
+      setCurrentStreamContent('')
+    },
+  })
+
+  const { sendMessage, stop } = useStreamChat(streamCallbacks.current)
 
   useEffect(() => {
-    fetch("/api/config")
+    fetch('/api/config')
       .then((r) => r.json())
       .then((cfg) => {
         setCharacterEmoji(cfg.characterEmoji || {})
         setAffectionStages(cfg.affectionStages || [])
         setStoryConfig({
-          title: cfg.title || "异世界后宫物语",
-          subtitle: cfg.subtitle || "AI 驱动的异世界文字冒险",
-          loadingText: cfg.loadingText || "命运的齿轮开始转动……",
-          emptyChatTitle: cfg.emptyChatTitle || "冒险即将开始...",
-          emptyChatSubtitle: cfg.emptyChatSubtitle || "输入你的名字，开启异世界之旅",
+          title: cfg.title || '未命名故事',
+          subtitle: cfg.subtitle || '',
+          loadingText: cfg.loadingText || '加载中……',
+          emptyChatTitle: cfg.emptyChatTitle || '欢迎',
+          emptyChatSubtitle: cfg.emptyChatSubtitle || '',
         })
+        if (cfg.initialState) {
+          setPlayerState((prev) => ({ ...prev, ...cfg.initialState }))
+        }
       })
       .catch(() => {})
 
     const params = new URLSearchParams(window.location.search)
-    const loadId = params.get("load")
+    const loadId = params.get('load')
     if (loadId) {
       fetch(`/api/saves/${loadId}`)
         .then((r) => r.json())
@@ -155,13 +195,13 @@ export default function GamePage() {
             applySaveData(data.save)
             if (data.history && data.history.length > 0) {
               const displayHistory = data.history
-                .filter((m: Message) => m.role !== "system")
+                .filter((m: Message) => m.role !== 'system')
                 .map((m: Message) => ({
                   ...m,
-                  content: m.role === "assistant" ? extractNarration(m.content) : m.content,
+                  content: m.role === 'assistant' ? extractNarration(m.content) : m.content,
                 }))
               setMessages(displayHistory)
-              const lastAssistant = [...data.history].reverse().find((m: Message) => m.role === "assistant")
+              const lastAssistant = [...data.history].reverse().find((m: Message) => m.role === 'assistant')
               if (lastAssistant) {
                 const restored = extractChoices(lastAssistant.content)
                 if (restored.length > 0) setChoices(restored)
@@ -172,7 +212,7 @@ export default function GamePage() {
         })
         .catch(() => {})
     } else {
-      fetch("/api/saves")
+      fetch('/api/saves')
         .then((r) => r.json())
         .then((data) => {
           setSaves(data.saves || [])
@@ -182,7 +222,23 @@ export default function GamePage() {
     }
   }, [])
 
-  function applySaveData(save: { id: string; playerName: string; hp: number; maxHp: number; mp: number; maxMp: number; gold: number; location: string; chapter: string; day: number; time: string; relations?: Relation[]; inventory?: InventoryItem[]; memories?: MemoryItem[]; harmony?: number }) {
+  function applySaveData(save: {
+    id: string
+    playerName: string
+    hp: number
+    maxHp: number
+    mp: number
+    maxMp: number
+    gold: number
+    location: string
+    chapter: string
+    day: number
+    time: string
+    relations?: Relation[]
+    inventory?: InventoryItem[]
+    memories?: MemoryItem[]
+    harmony?: number
+  }) {
     setSaveId(save.id)
     setPlayerState({
       playerName: save.playerName,
@@ -204,225 +260,6 @@ export default function GamePage() {
     setGameStarted(true)
   }
 
-  const sendMessage = useCallback(
-    async (sid: string, msg: string, playerNameForNew?: string) => {
-      if (isStreaming) return
-      setIsStreaming(true)
-      setIsLoading(true)
-      setCurrentStreamContent("")
-      setChoices([])
-
-      if (msg) {
-        setMessages((prev) => [...prev, { role: "user", content: msg }])
-      }
-
-      const controller = new AbortController()
-      abortRef.current = controller
-
-      try {
-        const res = await fetch("/api/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            saveId: sid,
-            message: msg || "",
-            playerName: playerNameForNew || undefined,
-          }),
-          signal: controller.signal,
-        })
-
-        if (!res.ok) {
-          const errData = await res.json()
-          throw new Error(errData.error || "请求失败")
-        }
-
-        const reader = res.body?.getReader()
-        if (!reader) throw new Error("无法读取响应流")
-
-        const decoder = new TextDecoder()
-        let fullContent = ""
-        let lastNarration = ""
-        let buffer = ""
-        let hasReceivedContent = false
-
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-
-          buffer += decoder.decode(value, { stream: true })
-          const lines = buffer.split("\n")
-          buffer = lines.pop() || ""
-
-          for (const line of lines) {
-            if (line.startsWith("data: ")) {
-              try {
-                const payload = JSON.parse(line.slice(6))
-
-                if (payload.done) {
-                  break
-                }
-
-                if (payload.error) {
-                  fullContent = `[错误] ${payload.error}`
-                  setCurrentStreamContent(fullContent)
-                  continue
-                }
-
-                if (payload.content) {
-                  if (!hasReceivedContent) {
-                    hasReceivedContent = true
-                    setIsLoading(false)
-                  }
-                  fullContent = payload.content
-                  if (payload.narration) {
-                    lastNarration = payload.narration
-                    setCurrentStreamContent(lastNarration)
-                  } else {
-                    setCurrentStreamContent(extractNarration(fullContent))
-                  }
-                }
-
-                if (payload.choices) {
-                  setChoices(payload.choices)
-                }
-
-                if (payload.newMemory) {
-                  setMemories((prev) => {
-                    const exists = prev.some(
-                      (m) => m.type === payload.newMemory.type && m.content === payload.newMemory.content
-                    )
-                    if (exists) return prev
-                    const mem: MemoryItem = {
-                      id: Math.random().toString(36).substring(2),
-                      type: payload.newMemory.type,
-                      content: payload.newMemory.content,
-                      importance: payload.newMemory.importance,
-                      createdAt: new Date().toISOString(),
-                    }
-                    return [...prev, mem]
-                  })
-                }
-
-                if (payload.stateChanges) {
-                  setPlayerState((prev) => ({
-                    ...prev,
-                    hp:
-                      payload.stateChanges.hp != null
-                        ? Math.max(0, Math.min(prev.maxHp, payload.stateChanges.hp))
-                        : prev.hp,
-                    mp:
-                      payload.stateChanges.mp != null
-                        ? Math.max(0, Math.min(prev.maxMp, payload.stateChanges.mp))
-                        : prev.mp,
-                    gold:
-                      payload.stateChanges.gold != null
-                        ? Math.max(0, payload.stateChanges.gold)
-                        : prev.gold,
-                    location:
-                      payload.stateChanges.location ?? prev.location,
-                    chapter:
-                      payload.stateChanges.chapter ?? prev.chapter,
-                    day:
-                      payload.stateChanges.day != null ? payload.stateChanges.day : prev.day,
-                    time: payload.stateChanges.time ?? prev.time,
-                  }))
-                }
-
-                if (payload.affectionChanges) {
-                  setRelations((prev) =>
-                    prev.map((r) => {
-                      const change =
-                        payload.affectionChanges[r.characterId]
-                      if (change) {
-                        const newAffection = Math.max(
-                          0,
-                          Math.min(100, r.affection + change),
-                        )
-                        const stage =
-                          newAffection <= 20
-                            ? "stranger"
-                            : newAffection <= 40
-                              ? "acquainted"
-                              : newAffection <= 60
-                                ? "friend"
-                                : newAffection <= 80
-                                  ? "intimate"
-                                  : newAffection <= 95
-                                    ? "close"
-                                    : "lover"
-                        return { ...r, affection: newAffection, stage }
-                      }
-                      return r
-                    }),
-                  )
-                }
-
-                if (payload.harmonyChange !== undefined) {
-                  setHarmony((prev) =>
-                    Math.max(
-                      0,
-                      Math.min(100, prev + payload.harmonyChange),
-                    ),
-                  )
-                }
-
-                if (payload.newItems) {
-                  setInventory((prev) => {
-                    const updated = [...prev]
-                    for (const item of payload.newItems) {
-                      const existing = updated.find(
-                        (i) => i.itemId === item.id,
-                      )
-                      if (existing) {
-                        existing.quantity += 1
-                      } else {
-                        updated.push({
-                          itemId: item.id,
-                          itemName: item.name,
-                          quantity: 1,
-                        })
-                      }
-                    }
-                    return updated
-                  })
-                }
-
-                if (payload.scene) {
-                  // scene info received
-                }
-              } catch {
-                // skip parse errors for partial lines
-              }
-            }
-          }
-        }
-
-        if (fullContent) {
-          const displayContent =
-            lastNarration || extractNarration(fullContent)
-          setMessages((prev) => [
-            ...prev,
-            { role: "assistant", content: displayContent },
-          ])
-        }
-      } catch (err) {
-        if (err instanceof Error && err.name !== "AbortError") {
-          const errorMsg = `[系统] ${err.message}`
-          setMessages((prev) => [
-            ...prev,
-            { role: "assistant", content: errorMsg },
-          ])
-        }
-      } finally {
-        setIsStreaming(false)
-        setIsLoading(false)
-        setCurrentStreamContent("")
-        abortRef.current = null
-      }
-    },
-    [isStreaming],
-  )
-
   const startNewGame = useCallback(async () => {
     if (!nameInput.trim() || gameStarted) return
     const name = nameInput.trim()
@@ -432,9 +269,9 @@ export default function GamePage() {
     setIsLoading(true)
 
     try {
-      const res = await fetch("/api/saves", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+      const res = await fetch('/api/saves', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ playerName: name }),
       })
       const data = await res.json()
@@ -457,14 +294,14 @@ export default function GamePage() {
           day: data.save.day,
           time: data.save.time,
         }))
-        sendMessage(data.save.id, "", name)
+        sendMessage(data.save.id, '', name)
       }
     } catch {
       setIsLoading(false)
       setIsStreaming(true)
       setMessages([
         {
-          role: "assistant",
+          role: 'assistant',
           content: `欢迎，${name}。你的异世界之旅即将开始...\n\n（由于API配置尚未设置，请先配置 .env 文件中的 AI_BASE_URL 和 AI_API_KEY）`,
         },
       ])
@@ -472,44 +309,39 @@ export default function GamePage() {
     }
   }, [nameInput, gameStarted, sendMessage])
 
-  const loadSave = useCallback(
-    async (id: string) => {
-      setIsLoading(true)
-      try {
-        const res = await fetch(`/api/saves/${id}`)
-        const data = await res.json()
-        if (data.save) {
-          applySaveData(data.save)
-          if (data.history && data.history.length > 0) {
-            const displayHistory = data.history
-              .filter((m: Message) => m.role !== "system")
-              .map((m: Message) => ({
-                ...m,
-                content: m.role === "assistant" ? extractNarration(m.content) : m.content,
-              }))
-            setMessages(displayHistory)
-            const lastAssistant = [...data.history].reverse().find((m: Message) => m.role === "assistant")
-            if (lastAssistant) {
-              const restored = extractChoices(lastAssistant.content)
-              if (restored.length > 0) setChoices(restored)
-            }
+  const loadSave = useCallback(async (id: string) => {
+    setIsLoading(true)
+    try {
+      const res = await fetch(`/api/saves/${id}`)
+      const data = await res.json()
+      if (data.save) {
+        applySaveData(data.save)
+        if (data.history && data.history.length > 0) {
+          const displayHistory = data.history
+            .filter((m: Message) => m.role !== 'system')
+            .map((m: Message) => ({
+              ...m,
+              content: m.role === 'assistant' ? extractNarration(m.content) : m.content,
+            }))
+          setMessages(displayHistory)
+          const lastAssistant = [...data.history].reverse().find((m: Message) => m.role === 'assistant')
+          if (lastAssistant) {
+            const restored = extractChoices(lastAssistant.content)
+            if (restored.length > 0) setChoices(restored)
           }
-          setIsLoading(false)
         }
-      } catch {
         setIsLoading(false)
       }
-    },
-    [],
-  )
+    } catch {
+      setIsLoading(false)
+    }
+  }, [])
 
   async function handleDeleteSave(id: string) {
     try {
-      await fetch(`/api/saves/${id}`, { method: "DELETE" })
+      await fetch(`/api/saves/${id}`, { method: 'DELETE' })
       setSaves((prev) => prev.filter((s) => s.id !== id))
-    } catch {
-      // silent
-    }
+    } catch {}
     setDeleteTarget(null)
   }
 
@@ -518,9 +350,8 @@ export default function GamePage() {
       if (!saveId || isStreaming) return
       const choice = choices.find((c) => c.id === choiceId)
       if (!choice) return
-      const choiceText = `${choice.text}`
       setChoices([])
-      sendMessage(saveId, choiceText)
+      sendMessage(saveId, choice.text)
     },
     [saveId, isStreaming, choices, sendMessage],
   )
@@ -535,182 +366,35 @@ export default function GamePage() {
   )
 
   const handleStop = useCallback(() => {
-    abortRef.current?.abort()
-    setIsStreaming(false)
-    setIsLoading(false)
-    setCurrentStreamContent("")
-  }, [])
+    stop()
+  }, [stop])
 
   if (showTitleScreen) {
     return (
       <>
-        <div className="flex flex-col items-start md:items-center justify-start md:justify-center min-h-screen bg-zinc-950 px-4 py-8 md:py-0 overflow-y-auto">
-          <div className="max-w-md w-full space-y-6 text-center mx-auto">
-            <div className="space-y-3">
-              <h1 className="text-4xl font-bold text-zinc-100 tracking-tight">
-                {storyConfig.title}
-              </h1>
-              <p className="text-sm text-zinc-500">
-                {storyConfig.subtitle}
-              </p>
-            </div>
-
-          {showNewGame ? (
-            <div className="border border-zinc-800 rounded-2xl bg-zinc-900/50 p-8 space-y-4">
-              <Input
-                placeholder="输入你的名字……"
-                value={nameInput}
-                onChange={(e) => setNameInput(e.target.value)}
-                onKeyDown={(e) =>
-                  e.key === "Enter" && startNewGame()
-                }
-                className="h-11 text-center text-lg border-zinc-700 bg-zinc-800/50 text-zinc-100 placeholder:text-zinc-600"
-              />
-              <Button
-                onClick={startNewGame}
-                disabled={!nameInput.trim()}
-                className="w-full h-11 text-base"
-              >
-                <Play className="size-4 mr-2" />
-                开始新的冒险
-              </Button>
-              <Button
-                variant="ghost"
-                onClick={() => setShowNewGame(false)}
-                className="w-full text-zinc-500 hover:text-zinc-300"
-              >
-                返回
-              </Button>
-            </div>
-          ) : saves.length > 0 ? (
-            <>
-              <div className="border border-zinc-800 rounded-2xl bg-zinc-900/50 p-6 space-y-3">
-                <Button
-                  onClick={() => setShowNewGame(true)}
-                  className="w-full h-11 text-base"
-                >
-                  <Play className="size-4 mr-2" />
-                  新的冒险
-                </Button>
-              </div>
-              <div className="text-left">
-                <p className="text-xs text-zinc-500 mb-3 font-medium uppercase tracking-wider px-1">
-                  继续游戏
-                </p>
-                <ScrollArea className="max-h-[55vh] md:max-h-[320px]">
-                  <div className="space-y-2">
-                    {saves.map((save) => (
-                      <div
-                        key={save.id}
-                        className="flex items-center gap-2"
-                      >
-                        <button
-                          onClick={() => loadSave(save.id)}
-                          className="flex-1 text-left border border-zinc-800 rounded-xl bg-zinc-900/50 p-4 hover:bg-zinc-800/50 transition-colors cursor-pointer"
-                        >
-                          <div className="flex items-center justify-between mb-1.5">
-                            <span className="text-sm font-medium text-zinc-200">
-                              {save.playerName}
-                            </span>
-                            <Badge className="text-xs bg-zinc-800 text-zinc-400 border-zinc-700">
-                              存档位 {save.slot}
-                            </Badge>
-                          </div>
-                          <div className="flex items-center gap-3 text-xs text-zinc-500">
-                            <span className="flex items-center gap-1">
-                              <MapPin className="size-3" />
-                              {save.location}
-                            </span>
-                            <span className="flex items-center gap-1">
-                              <Calendar className="size-3" />
-                              第{save.day}日
-                            </span>
-                            <span className="flex items-center gap-1">
-                              <Heart className="size-3 text-red-400" />
-                              {save.hp}/{save.maxHp}
-                            </span>
-                          </div>
-                        </button>
-                        <button
-                          onClick={() => setDeleteTarget(save.id)}
-                          className="shrink-0 size-9 flex items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/50 text-zinc-600 hover:text-red-400 hover:border-red-900/50 hover:bg-red-950/20 transition-colors cursor-pointer"
-                          title="删除存档"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </ScrollArea>
-              </div>
-            </>
-          ) : savesLoading ? (
-            <div className="border border-zinc-800 rounded-2xl bg-zinc-900/50 p-8">
-              <p className="text-sm text-zinc-500">正在检查存档……</p>
-            </div>
-          ) : (
-            <div className="border border-zinc-800 rounded-2xl bg-zinc-900/50 p-8 space-y-4">
-              <Input
-                placeholder="输入你的名字……"
-                value={nameInput}
-                onChange={(e) => setNameInput(e.target.value)}
-                onKeyDown={(e) =>
-                  e.key === "Enter" && startNewGame()
-                }
-                className="h-11 text-center text-lg border-zinc-700 bg-zinc-800/50 text-zinc-100 placeholder:text-zinc-600"
-              />
-              <Button
-                onClick={startNewGame}
-                disabled={!nameInput.trim()}
-                className="w-full h-11 text-base"
-              >
-                <Play className="size-4 mr-2" />
-                开始新的冒险
-              </Button>
-            </div>
-          )}
-
-          <p className="text-xs text-zinc-700">
-            需要配置 AI API 密钥才能开始游戏
-          </p>
-        </div>
-      </div>
-
-      <Dialog
-        open={deleteTarget !== null}
-        onOpenChange={(o) => { if (!o) setDeleteTarget(null) }}
-      >
-        <DialogContent className="bg-zinc-950 border-zinc-800 text-zinc-100 max-w-sm">
-          <DialogHeader>
-            <DialogTitle>确认删除</DialogTitle>
-            <DialogDescription className="text-zinc-500">
-              此操作不可撤销，存档数据将被永久删除。
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              onClick={() => setDeleteTarget(null)}
-              className="flex-1"
-            >
-              取消
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => deleteTarget && handleDeleteSave(deleteTarget)}
-              className="flex-1"
-            >
-              确认删除
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+        <TitleScreen
+          storyConfig={storyConfig}
+          saves={saves}
+          savesLoading={savesLoading}
+          showNewGame={showNewGame}
+          nameInput={nameInput}
+          onNameInputChange={setNameInput}
+          onShowNewGame={setShowNewGame}
+          onStartNewGame={startNewGame}
+          onLoadSave={loadSave}
+          onDeleteSave={setDeleteTarget}
+        />
+        <DeleteConfirmDialog
+          open={deleteTarget !== null}
+          onClose={() => setDeleteTarget(null)}
+          onConfirm={() => deleteTarget && handleDeleteSave(deleteTarget)}
+        />
       </>
     )
   }
 
   return (
-    <div className="flex flex-col h-screen bg-zinc-950">
+    <div className="flex flex-col h-screen bg-transparent">
       <header className="flex items-center justify-between border-b border-zinc-800 bg-zinc-950/95 px-4 py-2">
         <div className="flex items-center gap-2">
           <Button
@@ -751,7 +435,7 @@ export default function GamePage() {
                     <span className="text-lg">📖</span>
                   </div>
                 </div>
-                <p className="text-sm animate-pulse">
+                <p className="text-sm animate-stream-cursor">
                   {storyConfig.loadingText}
                 </p>
               </div>
@@ -770,9 +454,9 @@ export default function GamePage() {
                 <div className="flex justify-center py-3">
                   <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-zinc-800/50 text-xs text-zinc-500">
                     <span className="inline-flex gap-1">
-                      <span className="size-1.5 rounded-full bg-zinc-400 animate-bounce" style={{ animationDelay: "0ms" }} />
-                      <span className="size-1.5 rounded-full bg-zinc-400 animate-bounce" style={{ animationDelay: "150ms" }} />
-                      <span className="size-1.5 rounded-full bg-zinc-400 animate-bounce" style={{ animationDelay: "300ms" }} />
+                      <span className="size-1.5 rounded-full bg-zinc-400 animate-dot-bounce" style={{ animationDelay: '0ms' }} />
+                      <span className="size-1.5 rounded-full bg-zinc-400 animate-dot-bounce" style={{ animationDelay: '200ms' }} />
+                      <span className="size-1.5 rounded-full bg-zinc-400 animate-dot-bounce" style={{ animationDelay: '400ms' }} />
                     </span>
                     思考中
                   </span>
@@ -802,10 +486,7 @@ export default function GamePage() {
         />
       </div>
 
-      <Dialog
-        open={showSaveDialog}
-        onOpenChange={setShowSaveDialog}
-      >
+      <Dialog open={showSaveDialog} onOpenChange={setShowSaveDialog}>
         <DialogContent className="bg-zinc-950 border-zinc-800 text-zinc-100 max-w-sm">
           <DialogHeader>
             <DialogTitle>快速存档</DialogTitle>
@@ -820,44 +501,17 @@ export default function GamePage() {
               第{playerState.day}日 - {playerState.time}
             </p>
           </div>
-          <Button
-            onClick={() => setShowSaveDialog(false)}
-            className="w-full"
-          >
+          <Button onClick={() => setShowSaveDialog(false)} className="w-full">
             确认
           </Button>
         </DialogContent>
       </Dialog>
 
-      <Dialog
+      <DeleteConfirmDialog
         open={deleteTarget !== null}
-        onOpenChange={(o) => { if (!o) setDeleteTarget(null) }}
-      >
-        <DialogContent className="bg-zinc-950 border-zinc-800 text-zinc-100 max-w-sm">
-          <DialogHeader>
-            <DialogTitle>确认删除</DialogTitle>
-            <DialogDescription className="text-zinc-500">
-              此操作不可撤销，存档数据将被永久删除。
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              onClick={() => setDeleteTarget(null)}
-              className="flex-1"
-            >
-              取消
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => deleteTarget && handleDeleteSave(deleteTarget)}
-              className="flex-1"
-            >
-              确认删除
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() => deleteTarget && handleDeleteSave(deleteTarget)}
+      />
     </div>
   )
 }
