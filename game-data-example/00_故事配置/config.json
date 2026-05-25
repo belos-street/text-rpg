@@ -1,0 +1,106 @@
+{
+    "title": "你的游戏标题",
+    "subtitle": "你的游戏副标题",
+    "loadingText": "故事开始加载……",
+    "emptyChatTitle": "冒险即将开始...",
+    "emptyChatSubtitle": "输入你的名字，开启你的旅程",
+    "protagonistName": "主角名字",
+    "initialState": {
+        "chapter": "第一章：开始",
+        "location": "初始地点",
+        "day": 1,
+        "time": "早晨",
+        "hp": 100,
+        "maxHp": 100,
+        "mp": 50,
+        "maxMp": 50,
+        "gold": 50,
+        "harmony": 50,
+        "scene": {
+            "mood": "氛围",
+            "weather": "天气",
+            "time": "时间"
+        }
+    },
+    "initialInventory": [
+        {
+            "itemId": "I001",
+            "itemName": "初始道具",
+            "quantity": 1
+        }
+    ],
+    "initialMemory": {
+        "type": "event",
+        "content": "故事开始的记忆描述",
+        "importance": 8
+    },
+    "initialSummary": "存档摘要描述",
+    "characterEmoji": {
+        "角色A": "🎭",
+        "角色B": "🌿"
+    },
+    "affectionStages": [
+        {
+            "max": 20,
+            "label": "陌生人",
+            "actionDescriptions": [
+                "点头之交",
+                "保持距离"
+            ]
+        },
+        {
+            "max": 40,
+            "label": "认识",
+            "actionDescriptions": [
+                "愿意交谈",
+                "基本信任"
+            ]
+        },
+        {
+            "max": 60,
+            "label": "朋友",
+            "actionDescriptions": [
+                "主动接近",
+                "分享心事"
+            ]
+        },
+        {
+            "max": 80,
+            "label": "暧昧",
+            "actionDescriptions": [
+                "肢体接触",
+                "单独相处"
+            ]
+        },
+        {
+            "max": 95,
+            "label": "亲密",
+            "actionDescriptions": [
+                "亲密举动",
+                "依赖关系"
+            ]
+        },
+        {
+            "max": 100,
+            "label": "恋人",
+            "actionDescriptions": [
+                "毫无保留",
+                "生死相许"
+            ]
+        }
+    ],
+    "initialRelations": [
+        {
+            "characterId": "char_a",
+            "characterName": "角色A",
+            "affection": 0,
+            "stage": "stranger"
+        },
+        {
+            "characterId": "char_b",
+            "characterName": "角色B",
+            "affection": 0,
+            "stage": "stranger"
+        }
+    ]
+}
