@@ -6,5 +6,13 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function generateId(): string {
-  return crypto.randomUUID().replace(/-/g, "").slice(0, 20);
+  try {
+    const arr = new Uint8Array(10);
+    crypto.getRandomValues(arr);
+    return Array.from(arr, (b) => b.toString(16).padStart(2, "0")).join("");
+  } catch {
+    return (
+      Math.random().toString(36).substring(2, 10) + Date.now().toString(36)
+    );
+  }
 }

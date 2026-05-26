@@ -58,6 +58,8 @@ export interface GameUpdate {
 export interface Message {
   role: "user" | "assistant" | "system";
   content: string;
+  day?: number;
+  chapter?: string;
 }
 
 export interface SaveMeta {
@@ -114,4 +116,7 @@ export interface MemoryItem {
   content: string;
   importance: number;
   createdAt: string;
+  day?: number;
+  messageIndex?: number;
+  chapter?: string;
 }

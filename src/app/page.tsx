@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { Save, Menu } from 'lucide-react'
 import { StatusBar } from '@/components/game/StatusBar'
 import { ChatPanel } from '@/components/game/ChatPanel'
@@ -51,11 +51,16 @@ export default function GamePage() {
   const [saveId, setSaveId] = useState<string | null>(null)
   const [playerState, setPlayerState] = useState<PlayerState>(DEFAULT_PLAYER_STATE)
   const [messages, setMessages] = useState<Message[]>([])
+  const playerStateRef = useRef(playerState)
+  const messagesRef = useRef(messages)
+  playerStateRef.current = playerState
+  messagesRef.current = messages
   const [choices, setChoices] = useState<Choice[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [currentStreamContent, setCurrentStreamContent] = useState('')
   const [showSidebar, setShowSidebar] = useState(false)
+  const [selectedDay, setSelectedDay] = useState<number>(1)
   const [relations, setRelations] = useState<Relation[]>([])
   const [inventory, setInventory] = useState<InventoryItem[]>([])
   const [memories, setMemories] = useState<MemoryItem[]>([])
@@ -75,6 +80,11 @@ export default function GamePage() {
     emptyChatTitle: '加载中',
     emptyChatSubtitle: '',
   })
+
+  const displayMessages = useMemo(
+    () => messages.filter((m) => m.role !== 'system'),
+    [messages],
+  )
 
   const streamCallbacks = useRef({
     onStreamStart: () => {
@@ -105,21 +115,30 @@ export default function GamePage() {
             content: mem.content,
             importance: mem.importance,
             createdAt: new Date().toISOString(),
+            day: playerStateRef.current.day,
+            chapter: playerStateRef.current.chapter,
+            messageIndex: messagesRef.current.filter((m) => m.role !== 'system').length,
           },
         ]
       })
     },
     onStateChanges: (changes: Partial<PlayerState>) => {
-      setPlayerState((prev) => ({
-        ...prev,
-        hp: changes.hp != null ? Math.max(0, Math.min(prev.maxHp, changes.hp)) : prev.hp,
-        mp: changes.mp != null ? Math.max(0, Math.min(prev.maxMp, changes.mp)) : prev.mp,
-        gold: changes.gold != null ? Math.max(0, changes.gold) : prev.gold,
-        location: changes.location ?? prev.location,
-        chapter: changes.chapter ?? prev.chapter,
-        day: changes.day != null ? changes.day : prev.day,
-        time: changes.time ?? prev.time,
-      }))
+      setPlayerState((prev) => {
+        const newDay = changes.day != null ? changes.day : prev.day
+        if (newDay !== prev.day) {
+          setSelectedDay(newDay)
+        }
+        return {
+          ...prev,
+          hp: changes.hp != null ? Math.max(0, Math.min(prev.maxHp, changes.hp)) : prev.hp,
+          mp: changes.mp != null ? Math.max(0, Math.min(prev.maxMp, changes.mp)) : prev.mp,
+          gold: changes.gold != null ? Math.max(0, changes.gold) : prev.gold,
+          location: changes.location ?? prev.location,
+          chapter: changes.chapter ?? prev.chapter,
+          day: newDay,
+          time: changes.time ?? prev.time,
+        }
+      })
     },
     onAffectionChanges: (changes: Record<string, number>) => {
       setRelations((prev) =>
@@ -151,10 +170,10 @@ export default function GamePage() {
       })
     },
     onMessage: (msg: Message) => {
-      setMessages((prev) => [...prev, msg])
+      setMessages((prev) => [...prev, { ...msg, day: playerStateRef.current.day, chapter: playerStateRef.current.chapter }])
     },
     onError: (msg: Message) => {
-      setMessages((prev) => [...prev, msg])
+      setMessages((prev) => [...prev, { ...msg, day: playerStateRef.current.day, chapter: playerStateRef.current.chapter }])
     },
     onStreamEnd: () => {
       setIsStreaming(false)
@@ -194,13 +213,27 @@ export default function GamePage() {
             setIsLoading(true)
             applySaveData(data.save)
             if (data.history && data.history.length > 0) {
+              const saveDay = data.save.day || 1
+              const saveChapter = data.save.chapter || ''
               const displayHistory = data.history
                 .filter((m: Message) => m.role !== 'system')
                 .map((m: Message) => ({
                   ...m,
                   content: m.role === 'assistant' ? extractNarration(m.content) : m.content,
+                  day: m.day ?? saveDay,
+                  chapter: m.chapter ?? saveChapter,
                 }))
               setMessages(displayHistory)
+              setMemories((prev) => prev.map((mem) => {
+                if (mem.messageIndex != null) return mem
+                const idx = displayHistory.findIndex(
+                  (m: Message) => m.role === 'assistant' && mem.content.length > 10 && m.content.includes(mem.content),
+                )
+                if (idx !== -1) {
+                  return { ...mem, messageIndex: idx, day: displayHistory[idx].day, chapter: displayHistory[idx].chapter }
+                }
+                return { ...mem, day: mem.day ?? saveDay, chapter: mem.chapter ?? saveChapter }
+              }))
               const lastAssistant = [...data.history].reverse().find((m: Message) => m.role === 'assistant')
               if (lastAssistant) {
                 const restored = extractChoices(lastAssistant.content)
@@ -256,6 +289,7 @@ export default function GamePage() {
     setInventory(save.inventory || [])
     setMemories(save.memories || [])
     setHarmony(save.harmony ?? 50)
+    setSelectedDay(save.day)
     setShowTitleScreen(false)
     setGameStarted(true)
   }
@@ -303,6 +337,7 @@ export default function GamePage() {
         {
           role: 'assistant',
           content: `欢迎，${name}。你的异世界之旅即将开始...\n\n（由于API配置尚未设置，请先配置 .env 文件中的 AI_BASE_URL 和 AI_API_KEY）`,
+          day: 1,
         },
       ])
       setIsStreaming(false)
@@ -317,13 +352,27 @@ export default function GamePage() {
       if (data.save) {
         applySaveData(data.save)
         if (data.history && data.history.length > 0) {
+          const saveDay = data.save.day || 1
+          const saveChapter = data.save.chapter || ''
           const displayHistory = data.history
             .filter((m: Message) => m.role !== 'system')
             .map((m: Message) => ({
               ...m,
               content: m.role === 'assistant' ? extractNarration(m.content) : m.content,
+              day: m.day ?? saveDay,
+              chapter: m.chapter ?? saveChapter,
             }))
           setMessages(displayHistory)
+          setMemories((prev) => prev.map((mem) => {
+            if (mem.messageIndex != null) return mem
+            const idx = displayHistory.findIndex(
+              (m: Message) => m.role === 'assistant' && mem.content.length > 10 && m.content.includes(mem.content),
+            )
+            if (idx !== -1) {
+              return { ...mem, messageIndex: idx, day: displayHistory[idx].day, chapter: displayHistory[idx].chapter }
+            }
+            return { ...mem, day: mem.day ?? saveDay, chapter: mem.chapter ?? saveChapter }
+          }))
           const lastAssistant = [...data.history].reverse().find((m: Message) => m.role === 'assistant')
           if (lastAssistant) {
             const restored = extractChoices(lastAssistant.content)
@@ -350,19 +399,21 @@ export default function GamePage() {
       if (!saveId || isStreaming) return
       const choice = choices.find((c) => c.id === choiceId)
       if (!choice) return
+      setMessages((prev) => [...prev, { role: 'user', content: choice.text, day: playerState.day, chapter: playerState.chapter }])
       setChoices([])
       sendMessage(saveId, choice.text)
     },
-    [saveId, isStreaming, choices, sendMessage],
+    [saveId, isStreaming, choices, sendMessage, playerState.day, playerState.chapter],
   )
 
   const handleSendMessage = useCallback(
     (msg: string) => {
       if (!saveId || isStreaming) return
+      setMessages((prev) => [...prev, { role: 'user', content: msg, day: playerState.day, chapter: playerState.chapter }])
       setChoices([])
       sendMessage(saveId, msg)
     },
-    [saveId, isStreaming, sendMessage],
+    [saveId, isStreaming, sendMessage, playerState.day, playerState.chapter],
   )
 
   const handleStop = useCallback(() => {
@@ -449,6 +500,8 @@ export default function GamePage() {
                 characterEmoji={characterEmoji}
                 emptyTitle={storyConfig.emptyChatTitle}
                 emptySubtitle={storyConfig.emptyChatSubtitle}
+                selectedDay={selectedDay}
+                currentDay={playerState.day}
               />
               {isLoading && !currentStreamContent && messages.length > 0 && (
                 <div className="flex justify-center py-3">
@@ -480,9 +533,19 @@ export default function GamePage() {
           relations={relations}
           inventory={inventory}
           memories={memories}
+          messages={displayMessages}
           harmony={harmony}
           open={showSidebar}
           affectionStages={affectionStages}
+          selectedDay={selectedDay}
+          currentDay={playerState.day}
+          onDayChange={setSelectedDay}
+          onMemoryClick={(idx) => {
+            const el = document.querySelector(`[data-msg-index="${idx}"]`)
+            el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+            el?.classList.add('ring-2', 'ring-primary/50')
+            setTimeout(() => el?.classList.remove('ring-2', 'ring-primary/50'), 2000)
+          }}
         />
       </div>
 

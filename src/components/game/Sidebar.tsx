@@ -1,7 +1,8 @@
 "use client"
 
-import { Heart, Package, BookOpen } from "lucide-react"
-import type { Relation, InventoryItem, MemoryItem, AffectionStage } from "@/types"
+import { useMemo, useState } from "react"
+import { Heart, Package, BookOpen, ChevronRight, ChevronDown } from "lucide-react"
+import type { Relation, InventoryItem, MemoryItem, AffectionStage, Message } from "@/types"
 import { getAffectionStageLabel } from "@/lib/affection"
 import { cn } from "@/lib/utils"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -12,12 +13,80 @@ interface SidebarProps {
   relations: Relation[]
   inventory: InventoryItem[]
   memories: MemoryItem[]
+  messages: Message[]
   harmony: number
   open: boolean
   affectionStages?: AffectionStage[]
+  selectedDay: number
+  currentDay: number
+  onDayChange: (day: number) => void
+  onMemoryClick?: (messageIndex: number) => void
 }
 
-export function Sidebar({ relations, inventory, memories, harmony, open, affectionStages = [] }: SidebarProps) {
+export function Sidebar({
+  relations,
+  inventory,
+  memories,
+  messages,
+  harmony,
+  open,
+  affectionStages = [],
+  selectedDay,
+  currentDay,
+  onDayChange,
+  onMemoryClick,
+}: SidebarProps) {
+  const [openChapters, setOpenChapters] = useState<Set<string>>(new Set())
+
+  const chapterTree = useMemo(() => {
+    const chapterMap = new Map<string, Set<number>>()
+    for (const m of messages) {
+      const ch = m.chapter || "未知章节"
+      if (!chapterMap.has(ch)) chapterMap.set(ch, new Set())
+      if (m.day != null) chapterMap.get(ch)!.add(m.day)
+    }
+    if (chapterMap.size === 0) {
+      for (const mem of memories) {
+        const ch = mem.chapter || "未知章节"
+        if (!chapterMap.has(ch)) chapterMap.set(ch, new Set())
+        if (mem.day != null) chapterMap.get(ch)!.add(mem.day)
+      }
+      if (chapterMap.size === 0) chapterMap.set("未知章节", new Set([1]))
+    }
+    const tree: {
+      chapter: string
+      days: { day: number; memories: MemoryItem[] }[]
+    }[] = []
+    for (const [chapter, daySet] of chapterMap) {
+      const days = Array.from(daySet).sort((a, b) => a - b)
+      tree.push({
+        chapter,
+        days: days.map((day) => ({
+          day,
+          memories: memories.filter(
+            (m) => (m.chapter ?? chapter) === chapter && (m.day ?? 1) === day,
+          ),
+        })),
+      })
+    }
+    return tree
+  }, [messages, memories])
+
+  const toggleChapter = (chapter: string) => {
+    setOpenChapters((prev) => {
+      const next = new Set(prev)
+      if (next.has(chapter)) {
+        next.delete(chapter)
+      } else {
+        next.add(chapter)
+      }
+      return next
+    })
+  }
+
+  const isCurrentDay = (day: number) => day === currentDay
+  const isSelectedDay = (day: number) => day === selectedDay
+
   return (
     <>
       {open && (
@@ -43,9 +112,9 @@ export function Sidebar({ relations, inventory, memories, harmony, open, affecti
             <Package className="size-3.5" />
             <span className="text-xs">背包</span>
           </TabsTrigger>
-          <TabsTrigger value="memories" className="flex-1 gap-1">
+          <TabsTrigger value="chapters" className="flex-1 gap-1">
             <BookOpen className="size-3.5" />
-            <span className="text-xs">记忆</span>
+            <span className="text-xs">章节</span>
           </TabsTrigger>
         </TabsList>
 
@@ -106,31 +175,106 @@ export function Sidebar({ relations, inventory, memories, harmony, open, affecti
           </ScrollArea>
         </TabsContent>
 
-        <TabsContent value="memories" className="flex-1 px-3 mt-2">
+        <TabsContent value="chapters" className="flex-1 px-3 mt-2">
           <ScrollArea className="h-full">
-            {memories.length === 0 ? (
-              <p className="text-xs text-zinc-500 text-center py-8">暂无重要记忆</p>
+            {chapterTree.length === 0 ? (
+              <p className="text-xs text-zinc-500 text-center py-8">暂无章节数据</p>
             ) : (
-              <div className="space-y-2">
-                {[...memories]
-                  .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-                  .slice(0, 20)
-                  .map((m) => (
-                    <div key={m.id} className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-2.5">
-                      <div className="flex items-center gap-1.5 mb-1">
-                        <Badge className="text-[10px] h-4 px-1 border-zinc-700 text-zinc-400">
-                          {m.type === "event" ? "事件" : m.type === "decision" ? "抉择" : m.type === "item" ? "道具" : "关系"}
-                        </Badge>
-                        <span className="text-[10px] text-zinc-600">
-                          {new Date(m.createdAt).toLocaleDateString("zh-CN", {
-                            year: "numeric", month: "2-digit", day: "2-digit",
-                            hour: "2-digit", minute: "2-digit", second: "2-digit",
-                          })}
+              <div className="space-y-1">
+                {chapterTree.map((ch) => {
+                  const isOpen = openChapters.has(ch.chapter)
+                  const chapterActive = ch.days.some((d) => isSelectedDay(d.day))
+                  return (
+                    <div key={ch.chapter} className="rounded-lg border border-zinc-800 bg-zinc-900/30 overflow-hidden">
+                      <button
+                        onClick={() => toggleChapter(ch.chapter)}
+                        className={cn(
+                          "w-full flex items-center gap-2 px-3 py-2.5 text-left transition-colors",
+                          chapterActive ? "bg-primary/10" : "hover:bg-zinc-800/50",
+                        )}
+                      >
+                        {isOpen ? (
+                          <ChevronDown className="size-3.5 shrink-0 text-zinc-500" />
+                        ) : (
+                          <ChevronRight className="size-3.5 shrink-0 text-zinc-500" />
+                        )}
+                        <span className={cn(
+                          "text-xs font-medium",
+                          chapterActive ? "text-primary" : "text-zinc-300",
+                        )}>
+                          {ch.chapter}
                         </span>
-                      </div>
-                      <p className="text-xs text-zinc-300 leading-relaxed">{m.content}</p>
+                        <span className="text-[10px] text-zinc-600 ml-auto">
+                          {ch.days.length}天
+                        </span>
+                      </button>
+
+                      {isOpen && (
+                        <div className="border-t border-zinc-800/50">
+                          {ch.days.map((d) => {
+                            const daySelected = isSelectedDay(d.day)
+                            const dayCurrent = isCurrentDay(d.day)
+                            return (
+                              <div key={d.day}>
+                                <button
+                                  onClick={() => {
+                                    onDayChange(d.day)
+                                  }}
+                                  className={cn(
+                                    "w-full flex items-center gap-2 px-3 py-2 text-left transition-colors",
+                                    daySelected
+                                      ? "bg-primary/10 text-primary"
+                                      : "text-zinc-400 hover:bg-zinc-800/30 hover:text-zinc-300",
+                                  )}
+                                >
+                                  <span className="text-[10px] font-mono w-14 shrink-0">
+                                    Day {d.day}
+                                  </span>
+                                  <div className="flex-1" />
+                                  {dayCurrent && (
+                                    <span className="text-[9px] text-emerald-500 font-medium">当前</span>
+                                  )}
+                                  {d.memories.length > 0 && (
+                                    <span className="text-[10px] text-zinc-600">{d.memories.length}条</span>
+                                  )}
+                                </button>
+
+                                {daySelected && d.memories.length > 0 && (
+                                  <div className="pb-1">
+                                    {d.memories.map((mem) => (
+                                      <div
+                                        key={mem.id}
+                                        onClick={() => {
+                                          onDayChange(d.day)
+                                          if (mem.messageIndex != null && onMemoryClick) {
+                                            setTimeout(() => onMemoryClick(mem.messageIndex!), 50)
+                                          }
+                                        }}
+                                        className={cn(
+                                          "flex items-start gap-2 ml-12 mr-2 px-2 py-1.5 rounded-md transition-colors",
+                                          mem.messageIndex != null && onMemoryClick
+                                            ? "cursor-pointer hover:bg-zinc-800/50"
+                                            : "",
+                                        )}
+                                      >
+                                        <span className="text-[10px] mt-0.5 shrink-0">
+                                          {mem.type === "event" ? "📖" : mem.type === "decision" ? "⚖️" : mem.type === "item" ? "🎒" : "💕"}
+                                        </span>
+                                        <p className="text-[11px] text-zinc-400 leading-relaxed line-clamp-2">
+                                          {mem.content}
+                                        </p>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
                     </div>
-                  ))}
+                  )
+                })}
               </div>
             )}
           </ScrollArea>
