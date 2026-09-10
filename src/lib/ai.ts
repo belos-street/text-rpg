@@ -1,3 +1,5 @@
+import fs from "fs";
+import path from "path";
 import OpenAI from "openai";
 import { loadStoryConfig } from "./game-data";
 
@@ -61,14 +63,31 @@ function getClient(): OpenAI {
 // ---------- 结构化输出（D1） ----------
 
 let cachedJsonSchema: Record<string, unknown> | null = null;
+let cachedSchemaFingerprint = -1;
+
+// config.json 变更时自动重建 schema（无需重启开发服务器）
+function configSchemaFingerprint(): number {
+  try {
+    return fs.statSync(
+      path.join(process.cwd(), "game-data", "00_故事配置", "config.json"),
+    ).mtimeMs;
+  } catch {
+    return 0;
+  }
+}
 
 /**
  * 从故事配置构建 game_update 的 JSON Schema。
- * affectionChanges 的 key 枚举全部合法角色 ID——从语法层面杜绝
- * "用角色名当 key"（原 No.3）和编造 ID 的问题。
+ * affectionChanges 的 key 枚举全部合法角色 ID（可选输出）——从语法层面杜绝
+ * "用角色名当 key"（原 No.3）和编造 ID 的问题；只要求输出确实变化的角色，
+ * 避免每回合回显 19 个全 0 键值对的 token 浪费。
  */
-function getGameUpdateJsonSchema(): Record<string, unknown> {
-  if (cachedJsonSchema) return cachedJsonSchema;
+export function getGameUpdateJsonSchema(): Record<string, unknown> {
+  const fingerprint = configSchemaFingerprint();
+  if (cachedJsonSchema && cachedSchemaFingerprint === fingerprint) {
+    return cachedJsonSchema;
+  }
+  cachedSchemaFingerprint = fingerprint;
   const config = loadStoryConfig();
 
   const affectionProperties: Record<string, unknown> = {};
@@ -98,16 +117,21 @@ function getGameUpdateJsonSchema(): Record<string, unknown> {
     properties: {
       type: { enum: ["game_update"] },
       narration: { type: "string" },
-      choices: { type: "array", items: stringObject(["id", "text"]) },
+      choices: {
+        type: "array",
+        items: stringObject(["id", "text"]),
+        minItems: 2,
+        maxItems: 4,
+      },
       stateChanges: {
         type: "object",
         properties: {
-          hp: { type: "integer" },
-          mp: { type: "integer" },
-          gold: { type: "integer" },
+          hp: { type: "integer", minimum: 0 },
+          mp: { type: "integer", minimum: 0 },
+          gold: { type: "integer", minimum: 0 },
           location: { type: "string" },
           chapter: chapterEnum,
-          day: { type: "integer" },
+          day: { type: "integer", minimum: 1 },
           time: { type: "string" },
         },
         required: ["hp", "mp", "gold", "location", "chapter", "day", "time"],
@@ -116,7 +140,7 @@ function getGameUpdateJsonSchema(): Record<string, unknown> {
       affectionChanges: {
         type: "object",
         properties: affectionProperties,
-        required: Object.keys(affectionProperties),
+        // key 白名单限制但全部可选：模型只输出确实变化的角色（实测省 ~100 tokens/回合）
         additionalProperties: false,
       },
       affectionReason: { type: "string" },
@@ -131,7 +155,7 @@ function getGameUpdateJsonSchema(): Record<string, unknown> {
         properties: {
           type: { enum: ["event", "decision", "item", "relationship"] },
           content: { type: "string" },
-          importance: { type: "integer" },
+          importance: { type: "integer", minimum: 1, maximum: 10 },
         },
         required: ["type", "content", "importance"],
         additionalProperties: false,
