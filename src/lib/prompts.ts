@@ -32,6 +32,9 @@ export function loadGameContext(save: SaveData): string {
     `【玩家状态】玩家:${save.playerName} HP:${save.hp}/${save.maxHp} MP:${save.mp}/${save.maxMp} 金币:${save.gold}`,
     `【当前位置】${save.location} | 第${save.day}天 | ${save.time}`,
     `【当前章节】${save.chapter}`,
+    ...(save.scene
+      ? [`【场景氛围】${save.scene.mood} · ${save.scene.weather} · ${save.scene.time}`]
+      : []),
     "",
     `【好感度】${save.harmony}/100`,
     "",

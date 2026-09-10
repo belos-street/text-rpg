@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { listSaves, createInitialSave } from "@/lib/storage";
+import { createSaveRequestSchema } from "@/lib/schema";
 
 export async function GET() {
   try {
@@ -12,11 +13,14 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    const { playerName } = await req.json();
-    if (!playerName) {
-      return Response.json({ error: "需要提供玩家名称" }, { status: 400 });
+    const parsed = createSaveRequestSchema.safeParse(await req.json());
+    if (!parsed.success) {
+      return Response.json(
+        { error: "玩家名称需为 1-20 个字符" },
+        { status: 400 },
+      );
     }
-    const save = createInitialSave(playerName);
+    const save = createInitialSave(parsed.data.playerName);
     return Response.json({ save });
   } catch {
     return Response.json({ error: "创建存档失败" }, { status: 500 });

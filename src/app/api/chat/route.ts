@@ -10,6 +10,7 @@ import {
   summarizeConversation,
 } from "@/lib/storage";
 import { parseGameUpdate, narrationPreview } from "@/lib/parser";
+import { chatRequestSchema } from "@/lib/schema";
 import { getAffectionStage } from "@/lib/affection";
 import { generateId } from "@/lib/utils";
 import type { ParsedGameUpdate } from "@/lib/schema";
@@ -51,8 +52,28 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  let rawBody: unknown;
+  try {
+    rawBody = await req.json();
+  } catch {
+    return new Response(
+      JSON.stringify({ error: "请求体必须是合法 JSON" }),
+      { status: 400, headers: { "Content-Type": "application/json" } },
+    );
+  }
+
+  const bodyResult = chatRequestSchema.safeParse(rawBody);
+  if (!bodyResult.success) {
+    return new Response(
+      JSON.stringify({
+        error: `请求参数不合法: ${bodyResult.error.issues[0]?.message ?? ""}`,
+      }),
+      { status: 400, headers: { "Content-Type": "application/json" } },
+    );
+  }
+  const { saveId, message, playerName } = bodyResult.data;
+
   const encoder = new TextEncoder();
-  const { saveId, message, playerName } = await req.json();
 
   let save: SaveData | null = null;
 

@@ -15,6 +15,7 @@
 | `82249a8` | 第一批：R1 持久化静默吞错、No.1 路径穿越、No.2 流式增量重复、No.3 好感度 ID、No.4 JSON 三道闸（zod + parser 重写）、No.12 围栏提取、parser 测试 20 用例 |
 | `06e7861` | 批次 1：#26 空 key、#27 会话损坏备份、#28 停止竞态、#29 两处卡死、#30 时间戳 ISO、#32 写队列、generateId 降级兼容 hex20 |
 | 本批提交 | 批次 2+3+4：状态一致性 5 项、上下文性能 7 项（实测 32k→26k tokens + 前缀缓存友好）、测试基建 47 用例、顺带完成 B1/B4/No.13 |
+| 本批提交 | 批次 5+6a 收尾：结构化输出（json_schema 语法层强制合法 JSON + 19 角色ID 白名单）、超时重试、reasoning 白名单、body 校验、B2 scene 回喂、B3 人称统一 |
 
 ---
 
@@ -93,24 +94,20 @@
 
 ---
 
-## 批次 5 · AI 输出可靠性 🟡
+## 批次 5 · AI 输出可靠性 🟡（✅ 已完成，E2E 实测结构化输出生效）
 
-- [ ] **No.10 ai.ts 超时与重试** 🟡 S
-  - 改法：`new OpenAI({ baseURL, timeout: 60_000, maxRetries: 1 })`——本地模型 JIT 冷启动不再表现为无限"思考中"
-- [ ] **D1 结构化输出** 💡 M
-  - 改法：LM Studio OpenAI 兼容接口支持 `response_format: { type: "json_schema" }`——用 zod schema 生成 JSON Schema（zod v4 内置 `z.toJSONSchema`）在语法层强制合法输出；env 开关 `AI_STRUCTURED=auto`（本地开、云端探测），zod 保留为最后防线
-- [ ] **AI_REASONING 透传白名单** ⚪ S（第二轮 P3 未验证项）
-  - 改法：仅当 baseURL 为本地地址时携带 `reasoning_effort`，防云端 400
-- [ ] **No.14 + #24 API 边界校验** 🟡 S
-  - 改法：chat/saves 路由 body 用 zod 校验（复用 schema.ts）；playerName 限 20 字符
+- [x] **No.10 ai.ts 超时与重试** 🟡 S：`timeout: 120s, maxRetries: 1`
+- [x] **D1 结构化输出** 💡 M：`AI_STRUCTURED=auto`（本地端点自动启用）；JSON Schema 动态构建，affectionChanges 的 key **枚举全部合法角色 ID**（语法层根治 No.3 类 bug）；请求失败自动降级普通模式，zod 兜底不变
+- [x] **AI_REASONING 透传白名单** ⚪ S：仅本地端点携带 `reasoning_effort`
+- [x] **No.14 + #24 API 边界校验** 🟡 S：chat/saves body zod 校验，playerName 限 1-20 字符
 
 ---
 
-## 批次 6a · 游戏内容一致性 S（纯提示词/文案，立竿见影）
+## 批次 6a · 游戏内容一致性 S（✅ 已完成）
 
 - [x] **B1 玩家名字注入** 💡 S：状态块含 `玩家:{save.playerName}`（随批次 2+3 顺带完成）
-- [ ] **B2 scene 回喂** 💡 S：氛围/天气并入状态段或 StatusBar，终结死数据闭环
-- [ ] **B3 人称统一** 💡 S：core-rules.md 第二人称 vs prompts.ts 第一人称矛盾，二选一（建议第一人称，改 core-rules.md）
+- [x] **B2 scene 回喂** 💡 S：`【场景氛围】mood · weather · time` 并入状态块（随本批完成）
+- [x] **B3 人称统一** 💡 S：core-rules.md 改为第一人称，与 prompts.ts 一致（随本批完成）
 - [x] **B4 删除 R-18 引用** 💡 S：prompts.ts 改为"保持全年龄向的含蓄与美感"（随批次 3 顺带完成）
 - [x] **No.13 剩余静默吞错补日志** 🟡 S：listSaves 损坏存档、page.tsx config catch 均已补日志与用户可见提示
 

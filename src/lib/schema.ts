@@ -73,3 +73,15 @@ export const gameUpdateSchema = z.object({
 });
 
 export type ParsedGameUpdate = z.infer<typeof gameUpdateSchema>;
+
+// ---------- API 请求体校验（No.14 + #24） ----------
+
+export const chatRequestSchema = z.object({
+  saveId: z.string().optional(),
+  message: z.string().max(2000).optional(),
+  playerName: z.string().min(1).max(20).optional(),
+});
+
+export const createSaveRequestSchema = z.object({
+  playerName: z.string().min(1).max(20),
+});

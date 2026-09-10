@@ -1,4 +1,36 @@
 import OpenAI from "openai";
+import { loadStoryConfig } from "./game-data";
+
+function getApiKey(): string {
+  return process.env.AI_API_KEY || "";
+}
+
+function getModel(): string {
+  return process.env.AI_MODEL || "deepseek-chat";
+}
+
+function getReasoningEffort(): "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | undefined {
+  const value = process.env.AI_REASONING;
+  if (!value) return undefined;
+  return value as "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+}
+
+function isLocalBaseUrl(): boolean {
+  try {
+    const url = new URL(process.env.AI_BASE_URL || "https://api.deepseek.com/v1");
+    return ["127.0.0.1", "localhost", "::1", "0.0.0.0"].includes(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
+// AI_STRUCTURED: "auto"（默认，仅本地端点启用）| "on" | "off"
+function structuredOutputEnabled(): boolean {
+  const mode = (process.env.AI_STRUCTURED || "auto").toLowerCase();
+  if (mode === "off") return false;
+  if (mode === "on") return true;
+  return isLocalBaseUrl();
+}
 
 function getClient(): OpenAI {
   const apiKey = getApiKey();
@@ -9,6 +41,9 @@ function getClient(): OpenAI {
     baseURL,
     // 本地模型服务（Ollama/LM Studio）不校验 key；占位值兜底避免 SDK 因缺失 key 直接抛错
     apiKey: apiKey || "local-model",
+    // 本地模型 JIT 冷启动可能较慢；超时 + 有限重试，避免玩家端无限"思考中"
+    timeout: 120_000,
+    maxRetries: 1,
   };
 
   if (isMimo) {
@@ -23,32 +58,135 @@ function getClient(): OpenAI {
   return new OpenAI(opts);
 }
 
-function getModel(): string {
-  return process.env.AI_MODEL || "deepseek-chat";
+// ---------- 结构化输出（D1） ----------
+
+let cachedJsonSchema: Record<string, unknown> | null = null;
+
+/**
+ * 从故事配置构建 game_update 的 JSON Schema。
+ * affectionChanges 的 key 枚举全部合法角色 ID——从语法层面杜绝
+ * "用角色名当 key"（原 No.3）和编造 ID 的问题。
+ */
+function getGameUpdateJsonSchema(): Record<string, unknown> {
+  if (cachedJsonSchema) return cachedJsonSchema;
+  const config = loadStoryConfig();
+
+  const affectionProperties: Record<string, unknown> = {};
+  for (const relation of config.initialRelations) {
+    affectionProperties[relation.characterId] = { type: "integer" };
+  }
+
+  const stringObject = (keys: string[]) => ({
+    type: "object",
+    properties: Object.fromEntries(keys.map((key) => [key, { type: "string" }])),
+    required: keys,
+    additionalProperties: false,
+  });
+
+  cachedJsonSchema = {
+    type: "object",
+    properties: {
+      type: { enum: ["game_update"] },
+      narration: { type: "string" },
+      choices: { type: "array", items: stringObject(["id", "text"]) },
+      stateChanges: {
+        type: "object",
+        properties: {
+          hp: { type: "integer" },
+          mp: { type: "integer" },
+          gold: { type: "integer" },
+          location: { type: "string" },
+          chapter: { type: "string" },
+          day: { type: "integer" },
+          time: { type: "string" },
+        },
+        required: ["hp", "mp", "gold", "location", "chapter", "day", "time"],
+        additionalProperties: false,
+      },
+      affectionChanges: {
+        type: "object",
+        properties: affectionProperties,
+        required: Object.keys(affectionProperties),
+        additionalProperties: false,
+      },
+      harmonyChange: { type: "integer" },
+      newMemory: {
+        type: "object",
+        properties: {
+          type: { enum: ["event", "decision", "item", "relationship"] },
+          content: { type: "string" },
+          importance: { type: "integer" },
+        },
+        required: ["type", "content", "importance"],
+        additionalProperties: false,
+      },
+      newItems: { type: "array", items: stringObject(["id", "name"]) },
+      scene: stringObject(["mood", "weather", "time"]),
+    },
+    required: [
+      "type",
+      "narration",
+      "choices",
+      "stateChanges",
+      "affectionChanges",
+      "harmonyChange",
+      "newMemory",
+      "newItems",
+      "scene",
+    ],
+    additionalProperties: false,
+  };
+  return cachedJsonSchema;
 }
 
-function getReasoningEffort(): "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | undefined {
-  const value = process.env.AI_REASONING;
-  if (!value) return undefined;
-  return value as "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+async function openStream(
+  client: OpenAI,
+  messages: { role: "system" | "user" | "assistant"; content: string }[],
+  options: { structured: boolean },
+) {
+  const model = getModel();
+  const reasoningEffort = isLocalBaseUrl() ? getReasoningEffort() : undefined;
+
+  return client.chat.completions.create({
+    model,
+    messages,
+    stream: true as const,
+    temperature: 0.9,
+    max_tokens: 4096,
+    ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
+    ...(options.structured
+      ? {
+          response_format: {
+            type: "json_schema" as const,
+            json_schema: {
+              name: "game_update",
+              strict: true,
+              schema: getGameUpdateJsonSchema(),
+            },
+          },
+        }
+      : {}),
+  });
 }
 
 export async function* streamChat(
   messages: { role: "system" | "user" | "assistant"; content: string }[],
 ): AsyncGenerator<string> {
   const client = getClient();
-  const model = getModel();
+  const structured = structuredOutputEnabled();
 
-  const reasoningEffort = getReasoningEffort();
-
-  const stream = await client.chat.completions.create({
-    model,
-    messages,
-    stream: true,
-    temperature: 0.9,
-    max_tokens: 4096,
-    ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
-  });
+  let stream;
+  try {
+    stream = await openStream(client, messages, { structured });
+  } catch (error) {
+    if (!structured) throw error;
+    // 端点不支持 json_schema 时降级重试一次（zod 校验层仍在兜底）
+    console.warn(
+      "[ai] 结构化输出请求失败，降级为普通模式:",
+      error instanceof Error ? error.message : error,
+    );
+    stream = await openStream(client, messages, { structured: false });
+  }
 
   for await (const chunk of stream) {
     const content = chunk.choices[0]?.delta?.content || "";
@@ -60,8 +198,4 @@ export async function* streamChat(
 
 export function checkConfig(): boolean {
   return !!process.env.AI_BASE_URL;
-}
-
-export function getApiKey(): string {
-  return process.env.AI_API_KEY || "";
 }
