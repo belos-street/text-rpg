@@ -140,13 +140,16 @@ export async function POST(req: NextRequest) {
 
     const stream = new ReadableStream({
       start(controller) {
-        const payload = {
-          content: opening,
-          narration: opening,
-          choices: [],
-          done: true,
-        };
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
+        // content 与 done 必须分开发送：客户端把 done 视为终止标记，
+        // 同包发送会导致内容被丢弃
+        controller.enqueue(
+          encoder.encode(
+            `data: ${JSON.stringify({ content: opening, narration: opening, choices: [] })}\n\n`,
+          ),
+        );
+        controller.enqueue(
+          encoder.encode(`data: ${JSON.stringify({ done: true })}\n\n`),
+        );
         controller.close();
       },
     });

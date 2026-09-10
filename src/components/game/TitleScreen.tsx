@@ -164,9 +164,6 @@ export function TitleScreen({
             </div>
           )}
 
-          <p className="text-xs text-zinc-700">
-            需要配置 AI API 密钥才能开始游戏
-          </p>
         </div>
       </div>
     </>

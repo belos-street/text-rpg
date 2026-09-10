@@ -80,8 +80,6 @@ export function useStreamChat(callbacks: StreamChatCallbacks) {
             try {
               const payload = JSON.parse(line.slice(6));
 
-              if (payload.done) break;
-
               if (payload.error) {
                 fullContent = `[错误] ${payload.error}`;
                 callbacks.onStreamContent(fullContent);
@@ -95,6 +93,9 @@ export function useStreamChat(callbacks: StreamChatCallbacks) {
                 });
                 continue;
               }
+
+              // done 是终止标记，必须在处理完本事件其余字段之后再 break
+              // （固定开场序章会把 content 与 done 放在同一个事件里）
 
               if (payload.content) {
                 if (!hasReceivedContent) {
@@ -137,6 +138,8 @@ export function useStreamChat(callbacks: StreamChatCallbacks) {
               if (payload.newItems) {
                 callbacks.onNewItems(payload.newItems);
               }
+
+              if (payload.done) break;
             } catch {
               // skip parse errors for partial lines
             }
