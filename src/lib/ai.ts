@@ -28,11 +28,19 @@ function getModel(): string {
   return process.env.AI_MODEL || "deepseek-chat";
 }
 
+function getReasoningEffort(): "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | undefined {
+  const value = process.env.AI_REASONING;
+  if (!value) return undefined;
+  return value as "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+}
+
 export async function* streamChat(
   messages: { role: "system" | "user" | "assistant"; content: string }[],
 ): AsyncGenerator<string> {
   const client = getClient();
   const model = getModel();
+
+  const reasoningEffort = getReasoningEffort();
 
   const stream = await client.chat.completions.create({
     model,
@@ -40,6 +48,7 @@ export async function* streamChat(
     stream: true,
     temperature: 0.9,
     max_tokens: 4096,
+    ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
   });
 
   for await (const chunk of stream) {
