@@ -120,7 +120,7 @@ export async function POST(req: NextRequest) {
           role: "assistant",
           content: fullContent,
         };
-        appendConversation(save!.id, [userMsg, assistantMsg]);
+        await appendConversation(save!.id, [userMsg, assistantMsg]);
 
         const updatedDialogueHistory = getConversation(save!.id);
         const summary = summarizeConversation(
@@ -201,19 +201,6 @@ export async function POST(req: NextRequest) {
               (m) => m.type === event.type && m.content === event.content,
             );
             if (!alreadyExists) {
-              const now = new Date();
-              const timestamp =
-                now.getFullYear() +
-                "-" +
-                String(now.getMonth() + 1).padStart(2, "0") +
-                "-" +
-                String(now.getDate()).padStart(2, "0") +
-                "T" +
-                String(now.getHours()).padStart(2, "0") +
-                ":" +
-                String(now.getMinutes()).padStart(2, "0") +
-                ":" +
-                String(now.getSeconds()).padStart(2, "0");
               updateData.memories = [
                 ...freshSave.memories,
                 {
@@ -221,7 +208,7 @@ export async function POST(req: NextRequest) {
                   type: event.type,
                   content: event.content,
                   importance: event.importance,
-                  createdAt: timestamp,
+                  createdAt: new Date().toISOString(),
                 },
               ];
             }
@@ -232,7 +219,7 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        updateSave(save!.id, updateData);
+        await updateSave(save!.id, updateData);
       } catch (error) {
         console.error("[chat] 存档持久化失败:", error);
         try {

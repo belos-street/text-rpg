@@ -7,18 +7,17 @@ function getClient(): OpenAI {
 
   const opts: ConstructorParameters<typeof OpenAI>[0] = {
     baseURL,
+    // 本地模型服务（Ollama/LM Studio）不校验 key；占位值兜底避免 SDK 因缺失 key 直接抛错
+    apiKey: apiKey || "local-model",
   };
 
   if (isMimo) {
-    opts.apiKey = "sk-placeholder";
     opts.defaultHeaders = { "api-key": apiKey };
     opts.fetch = (url: RequestInfo | URL, init?: RequestInit) => {
       const headers = new Headers(init?.headers);
       headers.delete("authorization");
       return fetch(url, { ...init, headers });
     };
-  } else if (apiKey) {
-    opts.apiKey = apiKey;
   }
 
   return new OpenAI(opts);

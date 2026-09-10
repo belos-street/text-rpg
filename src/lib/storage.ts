@@ -20,6 +20,19 @@ function normalizeSaveId(id: string): string | null {
   return SAVE_ID_PATTERN.test(id) ? id : null;
 }
 
+// 同一存档的写操作按 id 串行化，消除并发读改写互相覆盖（双开标签页/停止后立刻重发）
+const writeQueues = new Map<string, Promise<unknown>>();
+
+function enqueueWrite<T>(id: string, task: () => T): Promise<T> {
+  const prev = writeQueues.get(id) ?? Promise.resolve();
+  const next = prev.then(task);
+  writeQueues.set(
+    id,
+    next.catch(() => undefined),
+  );
+  return next;
+}
+
 function savePath(id: string): string {
   return path.join(SAVES_DIR, `${id}.json`);
 }
@@ -88,12 +101,7 @@ export function createSave(
   return save;
 }
 
-export function updateSave(
-  id: string,
-  data: Partial<SaveData>,
-): SaveData | null {
-  const validId = normalizeSaveId(id);
-  if (!validId) return null;
+function updateSaveNow(validId: string, data: Partial<SaveData>): SaveData | null {
   const save = getSave(validId);
   if (!save) return null;
 
@@ -120,6 +128,15 @@ export function updateSave(
   return updated;
 }
 
+export function updateSave(
+  id: string,
+  data: Partial<SaveData>,
+): Promise<SaveData | null> {
+  const validId = normalizeSaveId(id);
+  if (!validId) return Promise.resolve(null);
+  return enqueueWrite(validId, () => updateSaveNow(validId, data));
+}
+
 export function deleteSave(id: string): boolean {
   const validId = normalizeSaveId(id);
   if (!validId) return false;
@@ -139,17 +156,27 @@ export function getConversation(saveId: string): Message[] {
   const validId = normalizeSaveId(saveId);
   if (!validId) return [];
   ensureDir(CONVERSATIONS_DIR);
+  const filePath = conversationPath(validId);
   try {
-    const raw = fs.readFileSync(conversationPath(validId), "utf-8");
+    const raw = fs.readFileSync(filePath, "utf-8");
     return JSON.parse(raw) as Message[];
-  } catch {
+  } catch (error) {
+    // 文件不存在是新存档的正常情况；存在但解析失败=已损坏：
+    // 先备份再重置，防止下一次 append 把全部历史覆写掉
+    if (error instanceof SyntaxError && fs.existsSync(filePath)) {
+      const backupPath = `${filePath}.corrupt-${Date.now()}`;
+      try {
+        fs.renameSync(filePath, backupPath);
+        console.error(`[storage] 会话文件损坏，已备份至 ${backupPath}`);
+      } catch (renameError) {
+        console.error("[storage] 会话文件损坏且备份失败:", renameError);
+      }
+    }
     return [];
   }
 }
 
-export function appendConversation(saveId: string, messages: Message[]) {
-  const validId = normalizeSaveId(saveId);
-  if (!validId) return;
+function appendConversationNow(validId: string, messages: Message[]) {
   ensureDir(CONVERSATIONS_DIR);
   const existing = getConversation(validId);
   const updated = [...existing, ...messages];
@@ -158,6 +185,15 @@ export function appendConversation(saveId: string, messages: Message[]) {
     JSON.stringify(updated, null, 2),
     "utf-8",
   );
+}
+
+export function appendConversation(
+  saveId: string,
+  messages: Message[],
+): Promise<void> {
+  const validId = normalizeSaveId(saveId);
+  if (!validId) return Promise.resolve();
+  return enqueueWrite(validId, () => appendConversationNow(validId, messages));
 }
 
 export function summarizeConversation(

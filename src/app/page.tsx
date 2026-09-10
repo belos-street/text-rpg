@@ -205,6 +205,15 @@ export default function GamePage() {
 
     const params = new URLSearchParams(window.location.search)
     const loadId = params.get('load')
+    const fetchSaves = () => {
+      fetch('/api/saves')
+        .then((r) => r.json())
+        .then((data) => {
+          setSaves(data.saves || [])
+          setSavesLoading(false)
+        })
+        .catch(() => setSavesLoading(false))
+    }
     if (loadId) {
       fetch(`/api/saves/${loadId}`)
         .then((r) => r.json())
@@ -241,17 +250,19 @@ export default function GamePage() {
               }
             }
             setIsLoading(false)
+            setSavesLoading(false)
+          } else {
+            // 存档不存在/已损坏：回退到标题屏存档列表，避免永远停在"正在检查存档……"
+            console.error('[load] 存档不存在:', loadId)
+            fetchSaves()
           }
         })
-        .catch(() => {})
-    } else {
-      fetch('/api/saves')
-        .then((r) => r.json())
-        .then((data) => {
-          setSaves(data.saves || [])
-          setSavesLoading(false)
+        .catch((error) => {
+          console.error('[load] 读取存档失败:', error)
+          fetchSaves()
         })
-        .catch(() => setSavesLoading(false))
+    } else {
+      fetchSaves()
     }
   }, [])
 
@@ -309,38 +320,38 @@ export default function GamePage() {
         body: JSON.stringify({ playerName: name }),
       })
       const data = await res.json()
-      if (data.save) {
-        setSaveId(data.save.id)
-        setRelations(data.save.relations)
-        setInventory(data.save.inventory)
-        setMemories(data.save.memories)
-        setHarmony(data.save.harmony)
-        setPlayerState((prev) => ({
-          ...prev,
-          playerName: data.save.playerName,
-          hp: data.save.hp,
-          maxHp: data.save.maxHp,
-          mp: data.save.mp,
-          maxMp: data.save.maxMp,
-          gold: data.save.gold,
-          location: data.save.location,
-          chapter: data.save.chapter,
-          day: data.save.day,
-          time: data.save.time,
-        }))
-        sendMessage(data.save.id, '', name)
+      if (!res.ok || !data.save) {
+        throw new Error(data.error || `创建存档失败（HTTP ${res.status}）`)
       }
-    } catch {
+      setSaveId(data.save.id)
+      setRelations(data.save.relations)
+      setInventory(data.save.inventory)
+      setMemories(data.save.memories)
+      setHarmony(data.save.harmony)
+      setPlayerState((prev) => ({
+        ...prev,
+        playerName: data.save.playerName,
+        hp: data.save.hp,
+        maxHp: data.save.maxHp,
+        mp: data.save.mp,
+        maxMp: data.save.maxMp,
+        gold: data.save.gold,
+        location: data.save.location,
+        chapter: data.save.chapter,
+        day: data.save.day,
+        time: data.save.time,
+      }))
+      sendMessage(data.save.id, '', name)
+    } catch (err) {
       setIsLoading(false)
-      setIsStreaming(true)
+      const reason = err instanceof Error ? err.message : '未知错误'
       setMessages([
         {
           role: 'assistant',
-          content: `欢迎，${name}。你的异世界之旅即将开始...\n\n（由于API配置尚未设置，请先配置 .env 文件中的 AI_BASE_URL 和 AI_API_KEY）`,
+          content: `创建存档失败：${reason}\n\n请检查服务端日志后重新开始游戏。`,
           day: 1,
         },
       ])
-      setIsStreaming(false)
     }
   }, [nameInput, gameStarted, sendMessage])
 
@@ -379,6 +390,9 @@ export default function GamePage() {
             if (restored.length > 0) setChoices(restored)
           }
         }
+        setIsLoading(false)
+      } else {
+        console.error('[load] 存档不存在:', id)
         setIsLoading(false)
       }
     } catch {

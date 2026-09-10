@@ -148,10 +148,10 @@ export function useStreamChat(callbacks: StreamChatCallbacks) {
   );
 
   const stop = useCallback(() => {
+    // 只负责中断：解锁与收尾统一由 sendMessage 的 finally 处理，
+    // 避免提前解锁后立刻重发，与服务端旧请求的持久化产生竞态
     abortRef.current?.abort();
-    isStreamingRef.current = false;
-    callbacks.onStreamEnd();
-  }, [callbacks]);
+  }, []);
 
   return { sendMessage, stop, isStreamingRef };
 }

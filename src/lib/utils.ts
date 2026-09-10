@@ -11,8 +11,13 @@ export function generateId(): string {
     crypto.getRandomValues(arr);
     return Array.from(arr, (b) => b.toString(16).padStart(2, "0")).join("");
   } catch {
-    return (
-      Math.random().toString(36).substring(2, 10) + Date.now().toString(36)
-    );
+    // 降级路径同样输出 20 位 hex，保证与存储层 id 校验（^[a-f0-9]{20}$）兼容
+    let out = "";
+    let seed = (Date.now() ^ Math.floor(Math.random() * 0x7fffffff)) % 0x7fffffff;
+    for (let i = 0; i < 5; i++) {
+      seed = (seed * 1103515245 + 12345) % 0x7fffffff;
+      out += seed.toString(16).padStart(6, "0").slice(0, 4);
+    }
+    return out;
   }
 }
