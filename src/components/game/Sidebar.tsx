@@ -124,40 +124,42 @@ export function Sidebar({
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="relations" className="flex-1 px-3 mt-2">
-          <div className="space-y-2">
-            <div className="flex items-center justify-between text-xs text-zinc-500 mb-2">
-              <span>和睦度</span>
-              <span className={harmony >= 60 ? "text-pink-400" : harmony >= 40 ? "text-yellow-400" : "text-red-400"}>
-                {harmony}/100
-              </span>
-            </div>
-            <div className="h-1.5 rounded-full bg-zinc-800 overflow-hidden mb-3">
-              <div
-                className="h-full rounded-full bg-gradient-to-r from-pink-500 to-rose-500 transition-all duration-500"
-                style={{ width: `${harmony}%` }}
-              />
-            </div>
-            {relations.map((r) => (
-              <div key={r.characterId} className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-2.5">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-sm font-medium text-zinc-200">{r.characterName}</span>
-                  <Badge className="text-[10px] h-4 px-1.5 bg-pink-500/10 text-pink-400 border-pink-500/20">
-                    {getAffectionStageLabel(r.affection, affectionStages)}
-                  </Badge>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="flex-1 h-1 rounded-full bg-zinc-800 overflow-hidden">
-                    <div
-                      className="h-full rounded-full bg-pink-500 transition-all duration-500"
-                      style={{ width: `${r.affection}%` }}
-                    />
-                  </div>
-                  <span className="text-xs text-zinc-500 tabular-nums w-8 text-right">{r.affection}</span>
-                </div>
+        <TabsContent value="relations" className="flex-1 px-3 mt-2 overflow-hidden">
+          <ScrollArea className="h-full">
+            <div className="space-y-2 pb-2">
+              <div className="flex items-center justify-between text-xs text-zinc-500 mb-2">
+                <span>和睦度</span>
+                <span className={harmony >= 60 ? "text-pink-400" : harmony >= 40 ? "text-yellow-400" : "text-red-400"}>
+                  {harmony}/100
+                </span>
               </div>
-            ))}
-          </div>
+              <div className="h-1.5 rounded-full bg-zinc-800 overflow-hidden mb-3">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-pink-500 to-rose-500 transition-all duration-500"
+                  style={{ width: `${harmony}%` }}
+                />
+              </div>
+              {relations.map((r) => (
+                <div key={r.characterId} className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-2.5">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-sm font-medium text-zinc-200">{r.characterName}</span>
+                    <Badge className="text-[10px] h-4 px-1.5 bg-pink-500/10 text-pink-400 border-pink-500/20">
+                      {getAffectionStageLabel(r.affection, affectionStages)}
+                    </Badge>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 h-1 rounded-full bg-zinc-800 overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-pink-500 transition-all duration-500"
+                        style={{ width: `${r.affection}%` }}
+                      />
+                    </div>
+                    <span className="text-xs text-zinc-500 tabular-nums w-8 text-right">{r.affection}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </ScrollArea>
         </TabsContent>
 
         <TabsContent value="items" className="flex-1 px-3 mt-2">

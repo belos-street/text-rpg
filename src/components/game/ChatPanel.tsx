@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useMemo } from "react"
+import { memo, useCallback, useEffect, useRef, useMemo, useState } from "react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { NarrativeText } from "./NarrativeText"
 import type { Message } from "@/types"
@@ -16,6 +16,52 @@ interface ChatPanelProps {
   currentDay: number
 }
 
+// Q4 前端性能：消息行 memo 化——流式期间 currentStreamContent 每 chunk 变化
+// 触发列表重渲染时，历史消息行因 props 引用稳定而跳过重渲染
+interface MessageRowProps {
+  msg: Message
+  globalIdx: number
+  delay: number
+  characterEmoji?: Record<string, string>
+}
+
+const MessageRow = memo(function MessageRow({
+  msg,
+  globalIdx,
+  delay,
+  characterEmoji,
+}: MessageRowProps) {
+  return (
+    <div
+      data-msg-index={globalIdx}
+      className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"} animate-message-enter transition-shadow duration-300`}
+      style={{ animationDelay: `${Math.min(delay, 0.3)}s` }}
+    >
+      <div
+        className={`max-w-[85%] rounded-2xl px-4 py-3 ${
+          msg.role === "user"
+            ? "bg-primary/20 text-primary-foreground rounded-br-md shadow-[0_0_0_1px_rgba(94,106,210,0.2),0_2px_8px_rgba(0,0,0,0.3)]"
+            : "bg-zinc-800/50 text-zinc-100 rounded-bl-md border border-zinc-700/50 shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_2px_8px_rgba(0,0,0,0.3)]"
+        }`}
+      >
+        {msg.role === "user" ? (
+          <p className="whitespace-pre-wrap text-sm leading-relaxed text-zinc-100">
+            <span className="inline-flex items-start gap-1.5">
+              <span className="shrink-0 text-base leading-relaxed">🧑</span>
+              <span>{msg.content}</span>
+            </span>
+          </p>
+        ) : (
+          <NarrativeText text={msg.content} characterEmoji={characterEmoji} />
+        )}
+      </div>
+    </div>
+  )
+})
+
+// 单日内的消息分页上限：超出时只渲染最新一页，"加载更早"按钮按页展开
+const MESSAGE_PAGE_SIZE = 50
+
 export function ChatPanel({
   messages,
   isStreaming,
@@ -28,6 +74,7 @@ export function ChatPanel({
 }: ChatPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const viewportRef = useRef<HTMLDivElement>(null)
+  const [dayMessageLimit, setDayMessageLimit] = useState(MESSAGE_PAGE_SIZE)
 
   const scrollToBottom = useCallback(() => {
     if (viewportRef.current) {
@@ -50,6 +97,20 @@ export function ChatPanel({
     [displayMessages, selectedDay],
   )
 
+  // 切换查看的日期时重置分页（渲染期状态调整，官方推荐模式）
+  const [prevSelectedDay, setPrevSelectedDay] = useState(selectedDay)
+  if (prevSelectedDay !== selectedDay) {
+    setPrevSelectedDay(selectedDay)
+    setDayMessageLimit(MESSAGE_PAGE_SIZE)
+  }
+
+  const hiddenCount = Math.max(0, filteredMessages.length - dayMessageLimit)
+  const visibleMessages = useMemo(
+    () =>
+      hiddenCount > 0 ? filteredMessages.slice(hiddenCount) : filteredMessages,
+    [filteredMessages, hiddenCount],
+  )
+
   const globalIndexMap = useMemo(() => {
     const map: number[] = []
     for (let i = 0; i < displayMessages.length; i++) {
@@ -59,6 +120,10 @@ export function ChatPanel({
     }
     return map
   }, [displayMessages, selectedDay])
+
+  const loadEarlier = useCallback(() => {
+    setDayMessageLimit((limit) => limit + MESSAGE_PAGE_SIZE)
+  }, [])
 
   useEffect(() => {
     scrollToBottom()
@@ -75,34 +140,25 @@ export function ChatPanel({
             </div>
           )}
 
-          {filteredMessages.map((msg, i) => {
-            const globalIdx = globalIndexMap[i]
+          {hiddenCount > 0 && (
+            <button
+              onClick={loadEarlier}
+              className="mx-auto block text-xs text-zinc-500 hover:text-zinc-300 px-3 py-1.5 rounded-full border border-zinc-800 bg-zinc-900/50 transition-colors"
+            >
+              加载更早的消息（还有 {hiddenCount} 条）
+            </button>
+          )}
+
+          {visibleMessages.map((msg, j) => {
+            const globalIdx = globalIndexMap[hiddenCount + j]
             return (
-              <div
-                key={`${selectedDay}-${i}`}
-                data-msg-index={globalIdx}
-                className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"} animate-message-enter transition-shadow duration-300`}
-                style={{ animationDelay: `${Math.min(i * 0.04, 0.3)}s` }}
-              >
-                <div
-                  className={`max-w-[85%] rounded-2xl px-4 py-3 ${
-                    msg.role === "user"
-                      ? "bg-primary/20 text-primary-foreground rounded-br-md shadow-[0_0_0_1px_rgba(94,106,210,0.2),0_2px_8px_rgba(0,0,0,0.3)]"
-                      : "bg-zinc-800/50 text-zinc-100 rounded-bl-md border border-zinc-700/50 shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_2px_8px_rgba(0,0,0,0.3)]"
-                  }`}
-                >
-                  {msg.role === "user" ? (
-                    <p className="whitespace-pre-wrap text-sm leading-relaxed text-zinc-100">
-                      <span className="inline-flex items-start gap-1.5">
-                        <span className="shrink-0 text-base leading-relaxed">🧑</span>
-                        <span>{msg.content}</span>
-                      </span>
-                    </p>
-                  ) : (
-                    <NarrativeText text={msg.content} characterEmoji={characterEmoji} />
-                  )}
-                </div>
-              </div>
+              <MessageRow
+                key={`${selectedDay}-${hiddenCount + j}`}
+                msg={msg}
+                globalIdx={globalIdx}
+                delay={j * 0.04}
+                characterEmoji={characterEmoji}
+              />
             )
           })}
 
