@@ -48,11 +48,13 @@ export interface GameUpdate {
   choices: Choice[];
   stateChanges?: StateChanges;
   affectionChanges?: AffectionChanges;
+  affectionReason?: string;
+  flagsChanges?: Record<string, number | boolean | string>;
   harmonyChange?: number;
   newMemory?: GameEvent;
   newItems?: { id: string; name: string }[];
   scene?: SceneInfo;
-  newChoices?: Choice[];
+  ending?: string;
 }
 
 export interface Message {
@@ -84,7 +86,8 @@ export interface SaveData extends SaveMeta {
   relations: Relation[];
   inventory: InventoryItem[];
   memories: MemoryItem[];
-  dialogueHistory: Message[];
+  /** 剧情标记：主线过关条件/支线触发的结构化状态（B5） */
+  flags?: Record<string, number | boolean | string>;
   summary: string;
   harmony: number;
   scene: SceneInfo | null;

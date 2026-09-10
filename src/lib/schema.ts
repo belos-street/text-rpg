@@ -44,6 +44,11 @@ export const gameUpdateSchema = z.object({
     .record(z.string(), z.coerce.number())
     .optional()
     .catch(undefined),
+  affectionReason: coerceString("").optional().catch(undefined),
+  flagsChanges: z
+    .record(z.string(), z.union([z.boolean(), z.coerce.number(), z.coerce.string()]))
+    .optional()
+    .catch(undefined),
   harmonyChange: z.coerce.number().optional().catch(undefined),
   newMemory: z
     .object({
@@ -70,6 +75,16 @@ export const gameUpdateSchema = z.object({
     })
     .optional()
     .catch(undefined),
+  ending: z
+    .preprocess(
+      (v) => (v === undefined || v === null ? "" : v),
+      z.coerce
+        .string()
+        .refine((v) => !/^(none|null|undefined|无|无结局|-)$/i.test(v), "非结局")
+        .catch(""),
+    )
+    .optional()
+    .catch(undefined),
 });
 
 export type ParsedGameUpdate = z.infer<typeof gameUpdateSchema>;
@@ -80,6 +95,8 @@ export const chatRequestSchema = z.object({
   saveId: z.string().optional(),
   message: z.string().max(2000).optional(),
   playerName: z.string().min(1).max(20).optional(),
+  /** C1 重新生成：移除最后一轮对话后重掷叙述与选项 */
+  regenerate: z.boolean().optional(),
 });
 
 export const createSaveRequestSchema = z.object({

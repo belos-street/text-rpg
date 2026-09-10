@@ -42,7 +42,7 @@ function makeSaveData(id: string): SaveData {
     relations: [],
     inventory: [],
     memories: [],
-    dialogueHistory: [],
+    flags: {},
     summary: "",
     harmony: 50,
     scene: null,

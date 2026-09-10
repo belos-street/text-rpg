@@ -206,6 +206,28 @@ export function appendConversation(
   return enqueueWrite(validId, () => appendConversationNow(validId, messages));
 }
 
+/**
+ * C1 重新生成：移除最后一轮对话（assistant + 前置 user）。
+ * 返回是否成功移除；不满足移除条件（不足一轮/顺序异常）时返回 false。
+ */
+export function popLastTurn(saveId: string): Promise<boolean> {
+  const validId = normalizeSaveId(saveId);
+  if (!validId) return Promise.resolve(false);
+  return enqueueWrite(validId, () => {
+    const conversation = getConversation(validId);
+    if (conversation.length < 2) return false;
+    const last = conversation[conversation.length - 1];
+    const prev = conversation[conversation.length - 2];
+    if (last.role !== "assistant" || prev.role !== "user") return false;
+    fs.writeFileSync(
+      conversationPath(validId),
+      JSON.stringify(conversation.slice(0, -2), null, 2),
+      "utf-8",
+    );
+    return true;
+  });
+}
+
 export function summarizeConversation(
   messages: Message[],
   currentSummary: string,
@@ -242,9 +264,12 @@ export function createInitialSave(playerName: string): SaveData {
     initialSummary,
     initialRelations,
   } = config;
+  // #20：槽位自动分配——取现有最大槽位 +1
+  const existingSaves = listSaves();
+  const slot = existingSaves.reduce((max, s) => Math.max(max, s.slot), 0) + 1;
   return createSave({
     name: `${playerName} - 第${initialState.day}天`,
-    slot: 1,
+    slot,
     playerName,
     chapter: initialState.chapter,
     location: initialState.location,
@@ -280,7 +305,7 @@ export function createInitialSave(playerName: string): SaveData {
         createdAt: new Date().toISOString(),
       },
     ],
-    dialogueHistory: [],
+    flags: {},
     summary: initialSummary,
     harmony: initialState.harmony,
     scene: initialState.scene,

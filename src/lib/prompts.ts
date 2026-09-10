@@ -1,4 +1,9 @@
-import { loadEssentialGameData, loadStoryConfig } from "./game-data";
+import {
+  chapterKeyOf,
+  loadEssentialGameData,
+  loadMainQuestForChapter,
+  loadStoryConfig,
+} from "./game-data";
 import { extractNarration } from "./parser";
 import type { SaveData } from "@/types";
 
@@ -26,6 +31,12 @@ export function loadGameContext(save: SaveData): string {
     .map((i) => `${i.itemName} x${i.quantity}`)
     .join(", ");
 
+  const config = loadStoryConfig();
+  const chapters = config.chapters ?? [];
+  const activeFlags = Object.entries(save.flags ?? {})
+    .filter(([, v]) => v)
+    .map(([k]) => k);
+
   return [
     `【当前存档摘要】${save.summary}`,
     "",
@@ -34,6 +45,12 @@ export function loadGameContext(save: SaveData): string {
     `【当前章节】${save.chapter}`,
     ...(save.scene
       ? [`【场景氛围】${save.scene.mood} · ${save.scene.weather} · ${save.scene.time}`]
+      : []),
+    ...(chapters.length > 0
+      ? [`【章节列表】${chapters.join("、")}（stateChanges.chapter 只能从列表中选择）`]
+      : []),
+    ...(activeFlags.length > 0
+      ? [`【剧情标记】${activeFlags.join("、")}`]
       : []),
     "",
     `【好感度】${save.harmony}/100`,
@@ -50,12 +67,21 @@ export function loadGameContext(save: SaveData): string {
 
 // 静态系统提示词：不含任何易变的存档状态，保证跨回合字节稳定，
 // 让 LM Studio 的前缀 KV cache 能命中（易变状态见 buildMessages 末尾的状态块）
-function buildSystemPrompt(): string {
-  const gameRules = loadEssentialGameData();
+function buildSystemPrompt(chapterKey: string | null): string {
   const config = loadStoryConfig();
+  // M1/M2：女主档案按当前章节筛选，主线大纲只注入当前章节概要
+  const gameRules = [
+    loadEssentialGameData(chapterKey),
+    "===== 主线剧情（总纲 + 当前章节概要 + 推进原则）=====",
+    loadMainQuestForChapter(chapterKey),
+  ].join("\n\n");
 
   const characterEmojiLines = Object.entries(config.characterEmoji)
     .map(([name, emoji]) => `- ${name} → ${emoji}`)
+    .join("\n");
+
+  const flagsLines = Object.entries(config.flags ?? {})
+    .map(([id, desc]) => `- ${id}：${desc}`)
     .join("\n");
 
   return `你是「${config.title}」的文字冒险游戏AI主持人（GM）。你的任务是驱动剧情、扮演所有角色、描述场景，并根据玩家的选择推进故事。
@@ -81,6 +107,10 @@ ${gameRules}
 ## 角色与 emoji 对应关系
 ${characterEmojiLines || "- 无预设角色"}
 
+## 可用剧情标记（flagsChanges）
+${flagsLines || "-（本故事未定义）"}
+当某项剧情节点达成时，在 flagsChanges 中把对应标记设为 true。只设置本次发生变化的标记。
+
 ## 输出格式
 你的每次回复必须严格按照以下JSON格式输出，**不要使用markdown代码块包裹，直接输出纯JSON**：
 
@@ -104,6 +134,10 @@ ${characterEmojiLines || "- 无预设角色"}
   "affectionChanges": {
     "角色ID": 好感度变化值（正负整数，-5到5。key 必须使用【角色关系】中括号内的 ID，如 "lia"，禁止使用角色名）
   },
+  "affectionReason": "一句话说明本次好感度变化的原因（无变化时省略此字段）",
+  "flagsChanges": {
+    "标记ID": true（key 使用【可用剧情标记】中的 ID，只设置本次发生变化的标记，无则省略整个字段）
+  },
   "harmonyChange": 后宫和睦度变化值（-5到5之间的整数）,
   "newMemory": {
     "type": "event|decision|item|relationship",
@@ -117,7 +151,8 @@ ${characterEmojiLines || "- 无预设角色"}
     "mood": "场景氛围",
     "weather": "天气",
     "time": "时间"
-  }
+  },
+  "ending": "当且仅当剧情抵达结局时，填写结局 ID（参照故事库 endings/index.md），非结局回合省略此字段"
 }
 
 记住：只输出纯JSON，不要markdown代码块，不要其他任何文字。
@@ -127,12 +162,12 @@ ${characterEmojiLines || "- 无预设角色"}
 2. 提供2-4个有意义的选项，选项要体现不同风格（主动/谨慎/浪漫/直率等）。
 3. 对于玩家自由输入（不选选项的情况），也要能灵活应对。
 4. 好感度变化要有合理依据，重要互动才会导致变化。
-5. 后宫和睦度影响群体互动时的氛围。
+5. 后宫和睦度（harmony）反映女主群体间的融洽程度：低于 40 时更容易触发摩擦与吃醋事件，高于 70 时群体互动更融洽。请在叙事中体现其影响。
 6. 当剧情涉及亲密场景时，保持全年龄向的含蓄与美感（本作无R-18内容）。
 7. 角色之间的互动要考虑她们的性格和当前关系阶段。
 8. 当玩家与某角色好感度达到阶段阈值时，触发对应的突破事件。
 
-最新一封玩家消息会附带【当前游戏状态】块，请以其为准做出反应。
+最新一封玩家消息会附带【当前游戏状态】块，请以其为准做出反应。章节推进必须遵守其中的【章节列表】。
 `;
 }
 
@@ -141,10 +176,11 @@ export function buildMessages(
   userInput: string,
   dialogueHistory: { role: string; content: string }[],
 ): { role: "system" | "user" | "assistant"; content: string }[] {
-  const isFirstMessage = !save || save.dialogueHistory.length === 0;
+  const isFirstMessage = !save || dialogueHistory.length === 0;
+  const chapterKey = chapterKeyOf(save?.chapter);
 
   const messages: { role: "system" | "user" | "assistant"; content: string }[] =
-    [{ role: "system", content: buildSystemPrompt() }];
+    [{ role: "system", content: buildSystemPrompt(chapterKey) }];
 
   if (save && dialogueHistory.length > 0) {
     // 只保留最近 10 条；assistant 历史压缩为纯叙述（原文仍在 conversations 文件里）

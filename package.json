@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "test": "bun test",
-    "verify": "bun run lint && bun test && bunx tsc --noEmit"
+    "verify": "bun run lint && bun test && bunx tsc --noEmit",
+    "validate:story": "bun scripts/validate-story.ts"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.15",

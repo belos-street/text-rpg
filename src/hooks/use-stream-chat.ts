@@ -9,6 +9,7 @@ interface StreamChatCallbacks {
   onNewMemory: (memory: Omit<MemoryItem, "id" | "createdAt">) => void;
   onStateChanges: (changes: Partial<PlayerState>) => void;
   onAffectionChanges: (changes: Record<string, number>) => void;
+  onAffectionReason: (reason: string) => void;
   onHarmonyChange: (change: number) => void;
   onNewItems: (items: { id: string; name: string }[]) => void;
   onMessage: (msg: Message) => void;
@@ -16,12 +17,22 @@ interface StreamChatCallbacks {
   onStreamEnd: () => void;
 }
 
+export interface SendMessageOptions {
+  /** C1 重新生成：服务端移除最后一轮后重掷叙述与选项 */
+  regenerate?: boolean;
+}
+
 export function useStreamChat(callbacks: StreamChatCallbacks) {
   const abortRef = useRef<AbortController | null>(null);
   const isStreamingRef = useRef(false);
 
   const sendMessage = useCallback(
-    async (sid: string, msg: string, playerNameForNew?: string) => {
+    async (
+      sid: string,
+      msg: string,
+      playerNameForNew?: string,
+      options?: SendMessageOptions,
+    ) => {
       if (isStreamingRef.current) return;
       isStreamingRef.current = true;
       callbacks.onStreamStart();
@@ -37,6 +48,7 @@ export function useStreamChat(callbacks: StreamChatCallbacks) {
             saveId: sid,
             message: msg || "",
             playerName: playerNameForNew || undefined,
+            regenerate: options?.regenerate || undefined,
           }),
           signal: controller.signal,
         });
@@ -112,6 +124,10 @@ export function useStreamChat(callbacks: StreamChatCallbacks) {
 
               if (payload.affectionChanges) {
                 callbacks.onAffectionChanges(payload.affectionChanges);
+              }
+
+              if (payload.affectionReason) {
+                callbacks.onAffectionReason(payload.affectionReason);
               }
 
               if (payload.harmonyChange !== undefined) {

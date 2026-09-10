@@ -16,6 +16,8 @@ interface SidebarProps {
   messages: Message[]
   harmony: number
   open: boolean
+  onClose?: () => void
+  onGift?: (itemId: string, characterId: string) => void
   affectionStages?: AffectionStage[]
   selectedDay: number
   currentDay: number
@@ -30,6 +32,8 @@ export function Sidebar({
   messages,
   harmony,
   open,
+  onClose,
+  onGift,
   affectionStages = [],
   selectedDay,
   currentDay,
@@ -37,6 +41,7 @@ export function Sidebar({
   onMemoryClick,
 }: SidebarProps) {
   const [openChapters, setOpenChapters] = useState<Set<string>>(new Set())
+  const [giftingItemId, setGiftingItemId] = useState<string | null>(null)
 
   const chapterTree = useMemo(() => {
     const chapterMap = new Map<string, Set<number>>()
@@ -93,7 +98,7 @@ export function Sidebar({
       {open && (
         <div
           className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 md:hidden"
-          onClick={() => {}}
+          onClick={() => onClose?.()}
         />
       )}
       <div
@@ -122,7 +127,7 @@ export function Sidebar({
         <TabsContent value="relations" className="flex-1 px-3 mt-2">
           <div className="space-y-2">
             <div className="flex items-center justify-between text-xs text-zinc-500 mb-2">
-              <span>好感度</span>
+              <span>和睦度</span>
               <span className={harmony >= 60 ? "text-pink-400" : harmony >= 40 ? "text-yellow-400" : "text-red-400"}>
                 {harmony}/100
               </span>
@@ -162,12 +167,42 @@ export function Sidebar({
             ) : (
               <div className="space-y-1.5">
                 {inventory.map((item, i) => (
-                  <div key={i} className="flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-900/50 px-2.5 py-2">
-                    <span className="text-sm text-zinc-200">{item.itemName}</span>
-                    {item.quantity > 1 && (
-                      <Badge className="text-[10px] h-4 px-1.5 bg-zinc-800 text-zinc-400">
-                        x{item.quantity}
-                      </Badge>
+                  <div key={i} className="rounded-lg border border-zinc-800 bg-zinc-900/50 px-2.5 py-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-zinc-200">{item.itemName}</span>
+                      <div className="flex items-center gap-1.5">
+                        {item.quantity > 1 && (
+                          <Badge className="text-[10px] h-4 px-1.5 bg-zinc-800 text-zinc-400">
+                            x{item.quantity}
+                          </Badge>
+                        )}
+                        {onGift && (
+                          <button
+                            onClick={() => setGiftingItemId(giftingItemId === item.itemId ? null : item.itemId)}
+                            className="text-[10px] px-1.5 py-0.5 rounded bg-pink-500/10 text-pink-400 border border-pink-500/20 hover:bg-pink-500/20 transition-colors"
+                          >
+                            赠送
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    {giftingItemId === item.itemId && onGift && (
+                      <div className="mt-2 pt-2 border-t border-zinc-800/60 space-y-1">
+                        <p className="text-[10px] text-zinc-500 mb-1">送给谁？</p>
+                        {relations.map((r) => (
+                          <button
+                            key={r.characterId}
+                            onClick={() => {
+                              onGift(item.itemId, r.characterId)
+                              setGiftingItemId(null)
+                            }}
+                            className="w-full flex items-center justify-between px-2 py-1 rounded text-xs text-zinc-300 hover:bg-zinc-800/60 transition-colors"
+                          >
+                            <span>{r.characterName}</span>
+                            <span className="text-pink-400 text-[10px]">好感 +3</span>
+                          </button>
+                        ))}
+                      </div>
                     )}
                   </div>
                 ))}

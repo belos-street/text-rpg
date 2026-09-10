@@ -83,6 +83,16 @@ function getGameUpdateJsonSchema(): Record<string, unknown> {
     additionalProperties: false,
   });
 
+  // B8：章节枚举——LLM 只能输出配置中的章节
+  const chapterEnum = config.chapters?.length
+    ? { enum: config.chapters }
+    : { type: "string" };
+  // B5：flags 白名单——只允许输出配置中声明的标记（可选字段，未声明则不可输出）
+  const flagsProperties: Record<string, unknown> = {};
+  for (const flagId of Object.keys(config.flags ?? {})) {
+    flagsProperties[flagId] = { type: "boolean" };
+  }
+
   cachedJsonSchema = {
     type: "object",
     properties: {
@@ -96,7 +106,7 @@ function getGameUpdateJsonSchema(): Record<string, unknown> {
           mp: { type: "integer" },
           gold: { type: "integer" },
           location: { type: "string" },
-          chapter: { type: "string" },
+          chapter: chapterEnum,
           day: { type: "integer" },
           time: { type: "string" },
         },
@@ -107,6 +117,12 @@ function getGameUpdateJsonSchema(): Record<string, unknown> {
         type: "object",
         properties: affectionProperties,
         required: Object.keys(affectionProperties),
+        additionalProperties: false,
+      },
+      affectionReason: { type: "string" },
+      flagsChanges: {
+        type: "object",
+        properties: flagsProperties,
         additionalProperties: false,
       },
       harmonyChange: { type: "integer" },
@@ -122,6 +138,7 @@ function getGameUpdateJsonSchema(): Record<string, unknown> {
       },
       newItems: { type: "array", items: stringObject(["id", "name"]) },
       scene: stringObject(["mood", "weather", "time"]),
+      ending: { type: "string" },
     },
     required: [
       "type",

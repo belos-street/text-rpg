@@ -165,5 +165,14 @@ bun run dev      # 启动确认新故事正常显示
 | 变量 | 说明 | 示例 |
 |------|------|------|
 | `AI_BASE_URL` | AI 接口地址（必填） | `https://api.deepseek.com/v1` |
-| `AI_API_KEY` | API 密钥 | `sk-xxx` |
+| `AI_API_KEY` | API 密钥（本地模型留空时自动使用占位值） | `sk-xxx` |
 | `AI_MODEL` | 模型名（可选） | `deepseek-chat` |
+| `AI_REASONING` | 思考强度（仅本地端点透传；`none` 回复更快） | `none` |
+| `AI_STRUCTURED` | 结构化输出：`auto`（默认，本地端点自动启用 json_schema 语法强制）/ `on` / `off` | `auto` |
+
+## 本地模型（Ollama / LM Studio）配置建议
+
+- **推荐模型**：中文角色扮演选 Qwen 系列（如 `qwen3.5-27b`），上下文要求 ≥ 32k（游戏提示词约 15-26k tokens）
+- **思考模型必配**：`AI_REASONING=none`——思考型模型（Qwen3/Gemma 带 thinking）不关闭思考会大幅拖慢回复，且语法约束下思考内容可能泄漏进正文
+- **结构化输出**：保持 `AI_STRUCTURED` 默认 `auto`，LM Studio 会在语法层强制模型输出合法 JSON
+- **前缀缓存**：保持默认消息结构（静态规则在前、易变状态在后），本地推理可命中前缀缓存，每回合仅增量 prefill

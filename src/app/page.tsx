@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
-import { Save, Menu } from 'lucide-react'
+import { Save, Menu, RefreshCw, Download } from 'lucide-react'
 import { StatusBar } from '@/components/game/StatusBar'
 import { ChatPanel } from '@/components/game/ChatPanel'
 import { ChoicePanel } from '@/components/game/ChoicePanel'
@@ -29,6 +29,7 @@ import type {
   InventoryItem,
   MemoryItem,
   SaveMeta,
+  SaveData,
   AffectionStage,
 } from '@/types'
 
@@ -74,6 +75,8 @@ export default function GamePage() {
   const [savesLoading, setSavesLoading] = useState(true)
   const [characterEmoji, setCharacterEmoji] = useState<Record<string, string>>({})
   const [affectionStages, setAffectionStages] = useState<AffectionStage[]>([])
+  const [affectionToast, setAffectionToast] = useState<string | null>(null)
+  const [endingCount, setEndingCount] = useState<number | null>(null)
   const [storyConfig, setStoryConfig] = useState({
     title: '加载中',
     subtitle: '',
@@ -153,6 +156,10 @@ export default function GamePage() {
         }),
       )
     },
+    onAffectionReason: (reason: string) => {
+      // C3 好感度即时反馈：浮动提示（4 秒自动消失）
+      setAffectionToast(`💫 ${reason}`)
+    },
     onHarmonyChange: (change: number) => {
       setHarmony((prev) => Math.max(0, Math.min(100, prev + change)))
     },
@@ -184,6 +191,13 @@ export default function GamePage() {
   })
 
   const { sendMessage, stop } = useStreamChat(streamCallbacks.current)
+
+  // C3 好感度浮动提示自动消失
+  useEffect(() => {
+    if (!affectionToast) return
+    const timer = setTimeout(() => setAffectionToast(null), 4000)
+    return () => clearTimeout(timer)
+  }, [affectionToast])
 
   useEffect(() => {
     fetch('/api/config')
@@ -226,34 +240,7 @@ export default function GamePage() {
           if (data.save) {
             setIsLoading(true)
             applySaveData(data.save)
-            if (data.history && data.history.length > 0) {
-              const saveDay = data.save.day || 1
-              const saveChapter = data.save.chapter || ''
-              const displayHistory = data.history
-                .filter((m: Message) => m.role !== 'system')
-                .map((m: Message) => ({
-                  ...m,
-                  content: m.role === 'assistant' ? extractNarration(m.content) : m.content,
-                  day: m.day ?? saveDay,
-                  chapter: m.chapter ?? saveChapter,
-                }))
-              setMessages(displayHistory)
-              setMemories((prev) => prev.map((mem) => {
-                if (mem.messageIndex != null) return mem
-                const idx = displayHistory.findIndex(
-                  (m: Message) => m.role === 'assistant' && mem.content.length > 10 && m.content.includes(mem.content),
-                )
-                if (idx !== -1) {
-                  return { ...mem, messageIndex: idx, day: displayHistory[idx].day, chapter: displayHistory[idx].chapter }
-                }
-                return { ...mem, day: mem.day ?? saveDay, chapter: mem.chapter ?? saveChapter }
-              }))
-              const lastAssistant = [...data.history].reverse().find((m: Message) => m.role === 'assistant')
-              if (lastAssistant) {
-                const restored = extractChoices(lastAssistant.content)
-                if (restored.length > 0) setChoices(restored)
-              }
-            }
+            applyHistory(data)
             setIsLoading(false)
             setSavesLoading(false)
           } else {
@@ -269,25 +256,17 @@ export default function GamePage() {
     } else {
       fetchSaves()
     }
+
+    // C6 结局图鉴：标题屏展示全局解锁进度
+    fetch('/api/progress')
+      .then((r) => r.json())
+      .then((data) => {
+        setEndingCount(data.unlockedEndings?.length ?? 0)
+      })
+      .catch(() => {})
   }, [])
 
-  function applySaveData(save: {
-    id: string
-    playerName: string
-    hp: number
-    maxHp: number
-    mp: number
-    maxMp: number
-    gold: number
-    location: string
-    chapter: string
-    day: number
-    time: string
-    relations?: Relation[]
-    inventory?: InventoryItem[]
-    memories?: MemoryItem[]
-    harmony?: number
-  }) {
+  function applySaveData(save: SaveData) {
     setSaveId(save.id)
     setPlayerState({
       playerName: save.playerName,
@@ -309,6 +288,37 @@ export default function GamePage() {
     setShowTitleScreen(false)
     setGameStarted(true)
     gameStartedRef.current = true
+  }
+
+  // #19：读档后的历史恢复逻辑（?load= 与 loadSave 共用）
+  function applyHistory(data: { save: SaveData; history: Message[] }) {
+    if (!data.history || data.history.length === 0) return
+    const saveDay = data.save.day || 1
+    const saveChapter = data.save.chapter || ''
+    const displayHistory = data.history
+      .filter((m: Message) => m.role !== 'system')
+      .map((m: Message) => ({
+        ...m,
+        content: m.role === 'assistant' ? extractNarration(m.content) : m.content,
+        day: m.day ?? saveDay,
+        chapter: m.chapter ?? saveChapter,
+      }))
+    setMessages(displayHistory)
+    setMemories((prev) => prev.map((mem) => {
+      if (mem.messageIndex != null) return mem
+      const idx = displayHistory.findIndex(
+        (m: Message) => m.role === 'assistant' && mem.content.length > 10 && m.content.includes(mem.content),
+      )
+      if (idx !== -1) {
+        return { ...mem, messageIndex: idx, day: displayHistory[idx].day, chapter: displayHistory[idx].chapter }
+      }
+      return { ...mem, day: mem.day ?? saveDay, chapter: mem.chapter ?? saveChapter }
+    }))
+    const lastAssistant = [...data.history].reverse().find((m: Message) => m.role === 'assistant')
+    if (lastAssistant) {
+      const restored = extractChoices(lastAssistant.content)
+      if (restored.length > 0) setChoices(restored)
+    }
   }
 
   const startNewGame = useCallback(async () => {
@@ -369,34 +379,7 @@ export default function GamePage() {
       const data = await res.json()
       if (data.save) {
         applySaveData(data.save)
-        if (data.history && data.history.length > 0) {
-          const saveDay = data.save.day || 1
-          const saveChapter = data.save.chapter || ''
-          const displayHistory = data.history
-            .filter((m: Message) => m.role !== 'system')
-            .map((m: Message) => ({
-              ...m,
-              content: m.role === 'assistant' ? extractNarration(m.content) : m.content,
-              day: m.day ?? saveDay,
-              chapter: m.chapter ?? saveChapter,
-            }))
-          setMessages(displayHistory)
-          setMemories((prev) => prev.map((mem) => {
-            if (mem.messageIndex != null) return mem
-            const idx = displayHistory.findIndex(
-              (m: Message) => m.role === 'assistant' && mem.content.length > 10 && m.content.includes(mem.content),
-            )
-            if (idx !== -1) {
-              return { ...mem, messageIndex: idx, day: displayHistory[idx].day, chapter: displayHistory[idx].chapter }
-            }
-            return { ...mem, day: mem.day ?? saveDay, chapter: mem.chapter ?? saveChapter }
-          }))
-          const lastAssistant = [...data.history].reverse().find((m: Message) => m.role === 'assistant')
-          if (lastAssistant) {
-            const restored = extractChoices(lastAssistant.content)
-            if (restored.length > 0) setChoices(restored)
-          }
-        }
+        applyHistory(data)
         setIsLoading(false)
       } else {
         console.error('[load] 存档不存在:', id)
@@ -414,6 +397,51 @@ export default function GamePage() {
     } catch {}
     setDeleteTarget(null)
   }
+
+  // C1 重新生成：移除最后一轮后重掷叙述与选项（状态以首次生成为准）
+  const handleRegenerate = useCallback(() => {
+    if (!saveId || isStreaming) return
+    const lastUser = [...messages].reverse().find((m) => m.role === 'user')
+    if (!lastUser) return
+    setChoices([])
+    sendMessage(saveId, lastUser.content, undefined, { regenerate: true })
+  }, [saveId, isStreaming, messages, sendMessage])
+
+  // C5 导出故事日志为 Markdown
+  const handleExport = useCallback(async () => {
+    if (!saveId) return
+    try {
+      const res = await fetch(`/api/saves/${saveId}`)
+      const data = await res.json()
+      if (!data.save) return
+      const lines: string[] = [
+        `# ${storyConfig.title}`,
+        '',
+        `- 玩家：${data.save.playerName}`,
+        `- 章节：${data.save.chapter}（第 ${data.save.day} 天 · ${data.save.time}）`,
+        `- 地点：${data.save.location}`,
+        '',
+        '---',
+        '',
+      ]
+      for (const m of data.history as Message[]) {
+        if (m.role === 'user') {
+          lines.push(`> 🧑 **${m.content}**`, '')
+        } else {
+          lines.push(m.content.startsWith('{') ? extractNarration(m.content) : m.content, '')
+        }
+      }
+      const blob = new Blob([lines.join('\n')], { type: 'text/markdown;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${data.save.playerName}-第${data.save.day}天.md`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error('[export] 导出失败:', error)
+    }
+  }, [saveId, storyConfig.title])
 
   const handleChoice = useCallback(
     (choiceId: string) => {
@@ -448,6 +476,7 @@ export default function GamePage() {
           storyConfig={storyConfig}
           saves={saves}
           savesLoading={savesLoading}
+          endingCount={endingCount}
           showNewGame={showNewGame}
           nameInput={nameInput}
           onNameInputChange={setNameInput}
@@ -482,6 +511,25 @@ export default function GamePage() {
           </h1>
         </div>
         <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 text-xs text-zinc-500"
+            onClick={handleRegenerate}
+            disabled={isStreaming || messages.length === 0}
+          >
+            <RefreshCw className="size-3.5 mr-1" />
+            重新生成
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 text-xs text-zinc-500"
+            onClick={handleExport}
+          >
+            <Download className="size-3.5 mr-1" />
+            导出
+          </Button>
           <Button
             variant="ghost"
             size="sm"
@@ -557,6 +605,30 @@ export default function GamePage() {
           messages={displayMessages}
           harmony={harmony}
           open={showSidebar}
+          onClose={() => setShowSidebar(false)}
+          onGift={async (itemId, characterId) => {
+            if (!saveId) return
+            try {
+              const res = await fetch('/api/gift', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ saveId, itemId, characterId }),
+              })
+              const data = await res.json()
+              if (!res.ok || !data.success) {
+                throw new Error(data.error || '赠送失败')
+              }
+              setInventory(data.inventory)
+              setRelations(data.relations)
+              setMessages((prev) => [
+                ...prev,
+                { role: 'assistant', content: data.giftMessage, day: playerStateRef.current.day, chapter: playerStateRef.current.chapter },
+              ])
+              setAffectionToast(`🎁 ${data.giftMessage}（好感 +${data.affectionChange}）`)
+            } catch (error) {
+              console.error('[gift] 赠送失败:', error)
+            }
+          }}
           affectionStages={affectionStages}
           selectedDay={selectedDay}
           currentDay={playerState.day}
@@ -596,6 +668,13 @@ export default function GamePage() {
         onClose={() => setDeleteTarget(null)}
         onConfirm={() => deleteTarget && handleDeleteSave(deleteTarget)}
       />
+
+      {/* C3 好感度/赠送即时反馈 */}
+      {affectionToast && (
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full bg-zinc-900/95 border border-zinc-700/60 text-xs text-zinc-200 shadow-[0_4px_16px_rgba(0,0,0,0.4)] animate-message-enter max-w-[80vw] truncate">
+          {affectionToast}
+        </div>
+      )}
     </div>
   )
 }

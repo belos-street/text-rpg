@@ -21,7 +21,7 @@ export function ChoicePanel({ choices, onChoice, disabled }: ChoicePanelProps) {
         <div className="flex flex-col gap-2">
           {choices.map((choice, i) => (
             <Button
-              key={choice.id}
+              key={`${choice.id}-${i}`}
               variant={VARIANT_MAP[i % VARIANT_MAP.length]}
               className="justify-start h-auto py-3 px-4 text-sm text-left whitespace-normal break-words hover:shadow-[0_0_20px_rgba(94,106,210,0.15)]"
               onClick={() => onChoice(choice.id)}

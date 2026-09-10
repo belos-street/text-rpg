@@ -40,7 +40,7 @@ function makeSave(overrides: Partial<SaveData> = {}): SaveData {
         chapter: "序章：坠入异界",
       },
     ],
-    dialogueHistory: [],
+    flags: {},
     summary: "测试摘要",
     harmony: 50,
     scene: { mood: "平静", weather: "晴", time: "黄昏" },

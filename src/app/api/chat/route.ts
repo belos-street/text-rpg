@@ -8,17 +8,20 @@ import {
   appendConversation,
   getConversation,
   summarizeConversation,
+  popLastTurn,
 } from "@/lib/storage";
+import { loadStoryConfig } from "@/lib/game-data";
 import { parseGameUpdate, narrationPreview } from "@/lib/parser";
 import { chatRequestSchema } from "@/lib/schema";
 import { getAffectionStage } from "@/lib/affection";
 import { generateId } from "@/lib/utils";
+import { unlockEnding } from "@/lib/global-progress";
 import type { ParsedGameUpdate } from "@/lib/schema";
 import type { SaveData, GameEvent, Message } from "@/types";
 
 export const runtime = "nodejs";
 
-// 状态变更的唯一合法入口：数值 clamp 到合法区间、day 只增不减（引擎侧硬执法）
+// 状态变更的唯一合法入口：数值 clamp 到合法区间、day 只增不减、章节枚举校验（引擎侧硬执法）
 function applyStateChanges(
   save: SaveData,
   changes: NonNullable<ParsedGameUpdate["stateChanges"]>,
@@ -37,7 +40,13 @@ function applyStateChanges(
     next.day = Math.max(save.day, Math.floor(changes.day));
   }
   if (changes.location) next.location = changes.location;
-  if (changes.chapter) next.chapter = changes.chapter;
+  if (changes.chapter) {
+    // B8：章节枚举校验——不在配置列表中的章节变更直接忽略
+    const chapters = loadStoryConfig().chapters;
+    if (!chapters || chapters.length === 0 || chapters.includes(changes.chapter)) {
+      next.chapter = changes.chapter;
+    }
+  }
   if (changes.time) next.time = changes.time;
   return next;
 }
@@ -71,9 +80,14 @@ export async function POST(req: NextRequest) {
       { status: 400, headers: { "Content-Type": "application/json" } },
     );
   }
-  const { saveId, message, playerName } = bodyResult.data;
+  const { saveId, message, playerName, regenerate } = bodyResult.data;
 
   const encoder = new TextEncoder();
+  const sseHeaders = {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    Connection: "keep-alive",
+  };
 
   let save: SaveData | null = null;
 
@@ -92,7 +106,53 @@ export async function POST(req: NextRequest) {
     });
   }
 
+  // C1 重新生成：移除最后一轮对话，状态以首次生成为准（narration/choices 重掷）
+  const isRegenerate = regenerate === true;
+  if (isRegenerate) {
+    const popped = await popLastTurn(save.id);
+    if (!popped) {
+      return new Response(JSON.stringify({ error: "没有可重新生成的回合" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+  }
+
   const dialogueHistory = getConversation(save.id);
+  const storyConfig = loadStoryConfig();
+
+  // C2 固定开场序章：新档且配置了 openingNarration 时零延迟返回，不调用 LLM
+  if (!message && dialogueHistory.length === 0 && storyConfig.openingNarration) {
+    const opening = storyConfig.openingNarration;
+    const userMsg: Message = {
+      role: "user",
+      content: "开始游戏",
+      day: save.day,
+      chapter: save.chapter,
+    };
+    const assistantMsg: Message = {
+      role: "assistant",
+      content: opening,
+      day: save.day,
+      chapter: save.chapter,
+    };
+    await appendConversation(save.id, [userMsg, assistantMsg]);
+
+    const stream = new ReadableStream({
+      start(controller) {
+        const payload = {
+          content: opening,
+          narration: opening,
+          choices: [],
+          done: true,
+        };
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
+        controller.close();
+      },
+    });
+    return new Response(stream, { headers: sseHeaders });
+  }
+
   const messages = buildMessages(save, message || "", dialogueHistory);
 
   const stream = new ReadableStream({
@@ -137,6 +197,12 @@ export async function POST(req: NextRequest) {
             if (parsed.affectionChanges) {
               payload.affectionChanges = parsed.affectionChanges;
             }
+            if (parsed.affectionReason) {
+              payload.affectionReason = parsed.affectionReason;
+            }
+            if (parsed.flagsChanges) {
+              payload.flagsChanges = parsed.flagsChanges;
+            }
             if (parsed.harmonyChange !== undefined) {
               payload.harmonyChange = parsed.harmonyChange;
             }
@@ -145,6 +211,9 @@ export async function POST(req: NextRequest) {
             }
             if (parsed.scene) {
               payload.scene = parsed.scene;
+            }
+            if (parsed.ending) {
+              payload.ending = parsed.ending;
             }
           }
 
@@ -193,7 +262,8 @@ export async function POST(req: NextRequest) {
           summary,
         };
 
-        if (parsed) {
+        // C1 重新生成：只重掷叙述与选项，状态以首次生成为准（避免好感度等增量被重复应用）
+        if (parsed && !isRegenerate) {
           const freshSave = getSave(save!.id) || save!;
 
           if (parsed.stateChanges) {
@@ -205,8 +275,10 @@ export async function POST(req: NextRequest) {
 
           if (parsed.affectionChanges) {
             updateData.relations = freshSave.relations.map((r) => {
-              const change = parsed.affectionChanges![r.characterId];
-              if (change) {
+              // B6：单回合好感度变化硬执法，clamp ±10
+              const raw = parsed.affectionChanges![r.characterId] ?? 0;
+              const change = Math.max(-10, Math.min(10, raw));
+              if (change !== 0) {
                 const newAffection = Math.max(
                   0,
                   Math.min(100, r.affection + change),
@@ -271,6 +343,20 @@ export async function POST(req: NextRequest) {
           if (parsed.scene) {
             updateData.scene = parsed.scene;
           }
+
+          if (parsed.flagsChanges) {
+            // B5：剧情标记合并（LLM 只能输出配置声明的白名单 key——由结构化输出语法层保证）
+            updateData.flags = { ...(freshSave.flags ?? {}), ...parsed.flagsChanges };
+          }
+
+          if (parsed.ending) {
+            // C6：结局解锁写入跨存档全局进度
+            try {
+              unlockEnding(parsed.ending);
+            } catch (progressError) {
+              console.error("[chat] 结局图鉴解锁失败:", progressError);
+            }
+          }
         }
 
         await updateSave(save!.id, updateData);
@@ -291,11 +377,5 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
-    },
-  });
+  return new Response(stream, { headers: sseHeaders });
 }

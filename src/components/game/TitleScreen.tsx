@@ -16,6 +16,7 @@ interface TitleScreenProps {
   storyConfig: StoryConfig
   saves: SaveMeta[]
   savesLoading: boolean
+  endingCount?: number | null
   showNewGame: boolean
   nameInput: string
   onNameInputChange: (v: string) => void
@@ -29,6 +30,7 @@ export function TitleScreen({
   storyConfig,
   saves,
   savesLoading,
+  endingCount,
   showNewGame,
   nameInput,
   onNameInputChange,
@@ -49,6 +51,9 @@ export function TitleScreen({
             <p className="text-sm text-zinc-500">
               {storyConfig.subtitle}
             </p>
+            {endingCount != null && endingCount > 0 && (
+              <p className="text-xs text-amber-400/80">🏆 结局图鉴 · 已解锁 {endingCount} 个结局</p>
+            )}
           </div>
 
           {showNewGame ? (

@@ -33,6 +33,14 @@ export interface StoryConfig {
     affection: number;
     stage: string;
   }[];
+  /** 章节枚举（B8）：LLM 只能从列表中选章节 */
+  chapters?: string[];
+  /** 每章节重点女主（M1）：chapter 标识 → characterId 列表 */
+  chapterHeroines?: Record<string, string[]>;
+  /** 剧情标记声明（B5）：flagId → 中文说明 */
+  flags?: Record<string, string>;
+  /** 固定开场序章（C2）：不走 LLM，零延迟开局 */
+  openingNarration?: string;
 }
 
 const GAME_DATA_DIR = path.join(process.cwd(), "game-data");
@@ -93,10 +101,118 @@ export function loadProtagonist(): string {
 }
 
 export function loadHeroines(): string {
-  const heroinesDir = path.join(GAME_DATA_DIR, "03_角色人物档案", "heroines");
-  return listMdFiles(heroinesDir)
-    .map((f) => readMdFile(f))
-    .join("\n\n---\n\n");
+  return loadHeroinesByIds(undefined);
+}
+
+/**
+ * 按角色 ID 列表筛选女主档案（M1）。
+ * 文件按文件名排序后的序号与 config.initialRelations 的顺序一一对应；
+ * 未传 ids 或映射失败时回退全量。
+ */
+export function loadHeroinesByIds(includeIds?: string[]): string {
+  const files = listMdFiles(
+    path.join(GAME_DATA_DIR, "03_角色人物档案", "heroines"),
+  ).sort();
+  let selected = files;
+  if (includeIds && includeIds.length > 0) {
+    const ids = loadStoryConfig().initialRelations.map((r) => r.characterId);
+    const filtered = files.filter((_, i) => includeIds.includes(ids[i]));
+    if (filtered.length > 0) selected = filtered;
+  }
+  return selected.map((f) => readMdFile(f)).join("\n\n---\n\n");
+}
+
+/** 从存档章节字符串提取章节标识（序章/第N章/终章） */
+export function chapterKeyOf(chapter: string | null | undefined): string | null {
+  if (!chapter) return null;
+  const trimmed = chapter.trim();
+  if (trimmed.startsWith("序章")) return "序章";
+  if (trimmed.includes("终章")) return "终章";
+  const match = trimmed.match(/第\s*(\d+)\s*章/);
+  return match ? `第${match[1]}章` : null;
+}
+
+/** 当前章节的重点女主 ID；未配置时返回 undefined（回退全量） */
+function heroineIdsForChapter(chapterKey: string | null): string[] | undefined {
+  if (!chapterKey) return undefined;
+  const map = loadStoryConfig().chapterHeroines;
+  const ids = map?.[chapterKey];
+  return ids && ids.length > 0 ? ids : undefined;
+}
+
+export function loadEssentialGameData(
+  chapterKey: string | null = null,
+): string {
+  return [
+    "===== 全局游戏规则（核心，必须遵守）=====",
+    loadCoreRules(),
+    "===== 主角设定 =====",
+    loadProtagonist(),
+    "===== 女主角们（当前章节相关）=====",
+    loadHeroinesByIds(heroineIdsForChapter(chapterKey)),
+    "===== 好感度判定 =====",
+    loadAffectionTable(),
+    "===== 场景地图 =====",
+    loadLocations(),
+  ].join("\n\n");
+}
+
+/**
+ * 主线大纲按章注入（M2）：总纲 + 当前章节概要 + 章节推进原则。
+ * chapterKey 为 null 时返回完整大纲。
+ */
+export function loadMainQuestForChapter(
+  chapterKey: string | null,
+): string {
+  const full = readMdFile(
+    path.join(GAME_DATA_DIR, "04_剧情故事库", "main-quest.md"),
+  );
+  if (!full || !chapterKey) return full;
+
+  const lines = full.split("\n");
+  const blocks: { header: string; level: number; body: string[] }[] = [];
+  for (const line of lines) {
+    const heading = line.match(/^(#{1,3})\s/);
+    if (heading) {
+      blocks.push({ header: line, level: heading[1].length, body: [] });
+    } else if (blocks.length > 0) {
+      blocks[blocks.length - 1].body.push(line);
+    }
+  }
+  const pickBlocks = (
+    predicate: (b: { header: string; level: number }) => boolean,
+  ) =>
+    blocks
+      .filter(predicate)
+      .map((b) => [b.header, ...b.body].join("\n"))
+      .join("\n\n");
+  const pickH2 = (keyword: string) =>
+    pickBlocks((b) => b.level === 2 && b.header.includes(keyword));
+
+  const parts: string[] = [];
+  const overview = pickH2("总纲");
+  if (overview) parts.push(overview);
+
+  if (chapterKey === "序章") {
+    const section = pickH2("序章");
+    if (section) parts.push(section);
+  } else if (chapterKey === "终章") {
+    const section = pickH2("终章");
+    if (section) parts.push(section);
+  } else {
+    const num = chapterKey.replace(/[^0-9]/g, "");
+    const section = pickBlocks(
+      (b) => b.level === 3 && b.header.includes(`第 ${num} 章`),
+    );
+    if (section) parts.push(section);
+  }
+
+  const rules = pickH2("章节推进原则");
+  if (rules) parts.push(rules);
+
+  const composed = parts.join("\n\n");
+  // 提取失败时回退完整大纲，保证 GM 始终持有主线信息
+  return composed || full;
 }
 
 export function loadNPCs(): string {
@@ -139,21 +255,6 @@ export function loadAffectionTable(): string {
 
 export function loadCombatTable(): string {
   return readMdFile(path.join(GAME_DATA_DIR, "09_判定数值表", "combat.md"));
-}
-
-export function loadEssentialGameData(): string {
-  return [
-    "===== 全局游戏规则（核心，必须遵守）=====",
-    loadCoreRules(),
-    "===== 主角设定 =====",
-    loadProtagonist(),
-    "===== 女主角们（关键人设）=====",
-    loadHeroines(),
-    "===== 好感度判定 =====",
-    loadAffectionTable(),
-    "===== 场景地图 =====",
-    loadLocations(),
-  ].join("\n\n");
 }
 
 export function loadStoryConfig(): StoryConfig {

@@ -16,6 +16,7 @@
 | `06e7861` | 批次 1：#26 空 key、#27 会话损坏备份、#28 停止竞态、#29 两处卡死、#30 时间戳 ISO、#32 写队列、generateId 降级兼容 hex20 |
 | 本批提交 | 批次 2+3+4：状态一致性 5 项、上下文性能 7 项（实测 32k→26k tokens + 前缀缓存友好）、测试基建 47 用例、顺带完成 B1/B4/No.13 |
 | 本批提交 | 批次 5+6a 收尾：结构化输出（json_schema 语法层强制合法 JSON + 19 角色ID 白名单）、超时重试、reasoning 白名单、body 校验、B2 scene 回喂、B3 人称统一 |
+| 本批提交 | 批次 6b+7+9+8：B5 flags 系统、B6 好感±10 限幅、B7 和睦度规则、B8 章节枚举、#20 槽位自动、C1 重新生成、C2 固定序章、C3 好感反馈、C4 背包赠送、C5 导出、C6 结局图鉴、M1 女主按章筛选、M2 大纲按章注入、D3 校验 CLI、D5 模型文档、批次 9 清理 6 项（#22/#18 延后） |
 
 ---
 
@@ -111,49 +112,49 @@
 - [x] **B4 删除 R-18 引用** 💡 S：prompts.ts 改为"保持全年龄向的含蓄与美感"（随批次 3 顺带完成）
 - [x] **No.13 剩余静默吞错补日志** 🟡 S：listSaves 损坏存档、page.tsx config catch 均已补日志与用户可见提示
 
-## 批次 6b · 游戏系统升级 💡（动 schema，依赖 6a）
+## 批次 6b · 游戏系统升级 💡（✅ 已完成）
 
-- [ ] **B5 flags 系统** 💡 L：SaveData 加 `flags: Record<string, boolean|number>`，game_update 允许 LLM 设置 flag；10 章主线的过关条件/支线触发有了结构化依托
-- [ ] **B6 数值硬执法** 💡 S：好感度单回合变化 clamp ±10（其余在批次 2 #5 已做）
-- [ ] **B7 harmony 玩法回路** 💡 S：提示词声明效果（和睦度 <40 触发吃醋事件）或砍掉
-- [ ] **B8 章节枚举化** 💡 M：config 预定义章节列表，LLM 只能选不能造；修复章节树因"第2章/第二章"分裂
-- [ ] **#20 slot 半成品决策** ⚪ S：实现槽位选择或删字段
-
----
-
-## 批次 7 · 玩法体验升级 💡
-
-- [ ] **C1 重新生成按钮** 💡 M：复用 saveId 不追加消息重发；配合回滚（删最后一轮+回滚状态）。LLM 游戏刚需，最高优先
-- [ ] **C2 固定开场序章** 💡 S：config 加 `openingNarration`，开局不走 5 万 token 的 LLM 冷启动
-- [ ] **C3 好感度即时反馈** 💡 M：game_update 加 `affectionReason`，前端浮动提示"+2 莉娅（帮她捡起义诊箱）"
-- [ ] **C4 背包赠送** 💡 M：选物品+选角色 → 好感度判定，打通背包→养成闭环
-- [ ] **C5 导出故事日志** 💡 S：conversations JSON → Markdown 下载，社交传播
-- [ ] **C6 结局图鉴** 💡 M：`data/global.json` 跨存档记录已解锁结局/已攻略角色，标题屏展示
+- [x] **B5 flags 系统** 💡 L：SaveData.flags + config.flags 白名单声明 + 结构化输出语法层限制 key + 状态块展示已激活标记
+- [x] **B6 数值硬执法** 💡 S：好感度单回合变化 clamp ±10
+- [x] **B7 harmony 玩法回路** 💡 S：提示词声明 <40 摩擦吃醋 / >70 融洽
+- [x] **B8 章节枚举化** 💡 M：config.chapters 列表 + applyStateChanges 校验（非法章节忽略）+ 结构化输出 chapter 枚举 + 状态块展示章节列表
+- [x] **#20 slot 自动分配** ⚪ S：新存档 slot = 现有最大 +1
 
 ---
 
-## 批次 8 · 引擎平台化 💡（依赖批次 6b）
+## 批次 7 · 玩法体验升级 💡（✅ 已完成）
 
-- [ ] **M1 女主档案按场景筛选** 💡 L：按当前章节重点女主注入 3-5 人（静态层 42k → 8-12k）
-- [ ] **M2 主线大纲按章注入** 💡 M：只注入当前章节概要+推进原则（15k → ~2k）
-- [ ] **M3 真 LLM 摘要** 💡 M：每 N 回合替换伪 summary
-- [ ] **D2 多故事包** 💡 L：`stories/<pack-id>/` + 标题屏故事选择页——兑现"故事引擎"定位
-- [ ] **D3 game-data 校验 CLI** 💡 S：`bun run validate:story` 检查 config 完整性、ID/emoji 一致性
-- [ ] **D4 调试面板** 💡 M：展示最终提示词/原始返回/解析结果/token 用量
-- [ ] **D5 模型配置文档** 💡 S：推荐模型、reasoning 档位、上下文要求写进 README
+- [x] **C1 重新生成** 💡 M：header 按钮 + `regenerate` 请求（popLastTurn 移除最后一轮重掷；状态以首次生成为准，杜绝增量重复）
+- [x] **C2 固定开场序章** 💡 S：config `openingNarration`——新档秒开（实测 0.1s），不走 LLM 冷启动
+- [x] **C3 好感度即时反馈** 💡 M：`affectionReason` 字段 + 底部浮动 toast（4s 自动消失）
+- [x] **C4 背包赠送** 💡 M：Sidebar 选物品→选角色 → `POST /api/gift`（道具-1、好感+3、写对话记录）
+- [x] **C5 导出故事日志** 💡 S：header 导出按钮 → Markdown 下载
+- [x] **C6 结局图鉴** 💡 M：`data/global.json` + `GET/POST /api/progress` + game_update `ending` 字段（schema 过滤 "None" 类垃圾值）+ 标题屏展示
 
 ---
 
-## 批次 9 · 清理与风格 ⚪
+## 批次 8 · 引擎平台化 💡（✅ 核心完成，2 项延后）
 
-- [ ] **#15 剩余死代码**：`GameUpdate.newChoices`、`SaveData.dialogueHistory`（S4 已删 trim 函数）
-- [ ] **#16 loadGameContext 原地 sort**：改 `[...save.memories].sort()`
-- [ ] **#19 历史恢复逻辑去重**：page.tsx 两处 30 行重复抽 `restoreHistory()`
-- [ ] **#25 applySaveData 参数类型**：内联形状改 `SaveData`
-- [ ] **#23 Sidebar 文案与遮罩**：和睦度文案纠正；遮罩点击关闭侧栏
-- [ ] **choice.id React key 冲突**（第二轮 P3）：[ChoicePanel.tsx#L24](file:///Users/belos/code/personal/text-rpg/src/components/game/ChoicePanel.tsx#L24) 改用 `${choice.id}-${index}` 兜底重复 id
-- [ ] **#22 格式化工具链**：补 oxfmt/prettier 配置；决策组件文件名 kebab-case 规范存废
-- [ ] **#18 会话文件无上限增长**：分片或归档（长战役才明显，可延后）
+- [x] **M1 女主档案按场景筛选** 💡 L：`config.chapterHeroines` 每章重点女主 → `loadHeroinesByIds` 按章注入（未配置章节回退全量）
+- [x] **M2 主线大纲按章注入** 💡 M：`loadMainQuestForChapter` 提取总纲+当前章节+推进原则（15k → ~2-3k）
+- [ ] **M3 真 LLM 摘要** ⏸ 延后：需额外 LLM 调用与触发队列，当前 S1 压缩 + 窗口 10 已够用；建议实测长战役后决定
+- [ ] **D2 多故事包** ⏸ 延后：架构级改造（stories/<id>/ + 选择页），建议作为独立版本规划
+- [x] **D3 game-data 校验 CLI** 💡 S：`bun run validate:story`（94 项检查：文件完整性/config 字段/ID-emoji 一致/章节映射）
+- [ ] **D4 调试面板** ⏸ 延后：UI 工作量大，建议实测游戏时按需做
+- [x] **D5 模型配置文档** 💡 S：README 补充推荐模型/reasoning/结构化输出/前缀缓存说明
+
+---
+
+## 批次 9 · 清理与风格 ⚪（✅ 已完成，2 项延后）
+
+- [x] **#15 剩余死代码**：`GameUpdate.newChoices`、`SaveData.dialogueHistory` 已删（S4 已删 trim 函数）
+- [x] **#16 loadGameContext 原地 sort**：随批次 3 重写修复
+- [x] **#19 历史恢复逻辑去重**：抽 `applyHistory()` 两处共用
+- [x] **#25 applySaveData 参数类型**：改 `SaveData`
+- [x] **#23 Sidebar 文案与遮罩**：和睦度文案纠正；遮罩点击关闭侧栏
+- [x] **choice.id React key 冲突**：`${choice.id}-${index}` 兜底
+- [ ] **#22 格式化工具链** ⏸ 延后：涉及全量重排版与组件文件名规范决策，需单独一次"仅格式化"提交
+- [ ] **#18 会话文件无上限增长** ⏸ 延后：长战役才明显，观察后再定
 
 ---
 
