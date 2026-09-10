@@ -1,8 +1,9 @@
 import { loadEssentialGameData, loadStoryConfig } from "./game-data";
-import type { SaveData, Message } from "@/types";
+import { extractNarration } from "./parser";
+import type { SaveData } from "@/types";
 
 export function loadGameContext(save: SaveData): string {
-  const recentMemories = save.memories
+  const recentMemories = [...save.memories]
     .sort(
       (a, b) =>
         new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
@@ -28,7 +29,7 @@ export function loadGameContext(save: SaveData): string {
   return [
     `【当前存档摘要】${save.summary}`,
     "",
-    `【玩家状态】HP:${save.hp}/${save.maxHp} MP:${save.mp}/${save.maxMp} 金币:${save.gold}`,
+    `【玩家状态】玩家:${save.playerName} HP:${save.hp}/${save.maxHp} MP:${save.mp}/${save.maxMp} 金币:${save.gold}`,
     `【当前位置】${save.location} | 第${save.day}天 | ${save.time}`,
     `【当前章节】${save.chapter}`,
     "",
@@ -44,32 +45,9 @@ export function loadGameContext(save: SaveData): string {
   ].join("\n");
 }
 
-export function trimConversationForTokenLimit(
-  messages: Message[],
-  maxTokens: number = 4000,
-): Message[] {
-  const systemMessages = messages.filter((m) => m.role === "system");
-  const nonSystemMessages = messages.filter((m) => m.role !== "system");
-
-  const estimatedTokens = (text: string) => Math.ceil(text.length / 2);
-
-  let tokenCount = systemMessages.reduce(
-    (acc, m) => acc + estimatedTokens(m.content),
-    0,
-  );
-  const result: Message[] = [...systemMessages];
-
-  for (let i = nonSystemMessages.length - 1; i >= 0; i--) {
-    const tokens = estimatedTokens(nonSystemMessages[i].content);
-    if (tokenCount + tokens > maxTokens) break;
-    tokenCount += tokens;
-    result.push(nonSystemMessages[i]);
-  }
-
-  return result;
-}
-
-function buildSystemPrompt(save: SaveData | null): string {
+// 静态系统提示词：不含任何易变的存档状态，保证跨回合字节稳定，
+// 让 LM Studio 的前缀 KV cache 能命中（易变状态见 buildMessages 末尾的状态块）
+function buildSystemPrompt(): string {
   const gameRules = loadEssentialGameData();
   const config = loadStoryConfig();
 
@@ -77,7 +55,7 @@ function buildSystemPrompt(save: SaveData | null): string {
     .map(([name, emoji]) => `- ${name} → ${emoji}`)
     .join("\n");
 
-  const basePrompt = `你是「${config.title}」的文字冒险游戏AI主持人（GM）。你的任务是驱动剧情、扮演所有角色、描述场景，并根据玩家的选择推进故事。
+  return `你是「${config.title}」的文字冒险游戏AI主持人（GM）。你的任务是驱动剧情、扮演所有角色、描述场景，并根据玩家的选择推进故事。
 
 ${gameRules}
 
@@ -147,17 +125,12 @@ ${characterEmojiLines || "- 无预设角色"}
 3. 对于玩家自由输入（不选选项的情况），也要能灵活应对。
 4. 好感度变化要有合理依据，重要互动才会导致变化。
 5. 后宫和睦度影响群体互动时的氛围。
-6. 当剧情涉及亲密场景时，按照core-rules.md中的R-18规则执行。
+6. 当剧情涉及亲密场景时，保持全年龄向的含蓄与美感（本作无R-18内容）。
 7. 角色之间的互动要考虑她们的性格和当前关系阶段。
 8. 当玩家与某角色好感度达到阶段阈值时，触发对应的突破事件。
 
+最新一封玩家消息会附带【当前游戏状态】块，请以其为准做出反应。
 `;
-
-  if (save) {
-    return basePrompt + `\n\n## 当前游戏状态\n${loadGameContext(save)}`;
-  }
-
-  return basePrompt;
 }
 
 export function buildMessages(
@@ -167,31 +140,45 @@ export function buildMessages(
 ): { role: "system" | "user" | "assistant"; content: string }[] {
   const isFirstMessage = !save || save.dialogueHistory.length === 0;
 
-  const systemPrompt = buildSystemPrompt(save);
-
   const messages: { role: "system" | "user" | "assistant"; content: string }[] =
-    [{ role: "system", content: systemPrompt }];
+    [{ role: "system", content: buildSystemPrompt() }];
 
   if (save && dialogueHistory.length > 0) {
-    const recentHistory = dialogueHistory.slice(-20);
+    // 只保留最近 10 条；assistant 历史压缩为纯叙述（原文仍在 conversations 文件里）
+    const recentHistory = dialogueHistory.slice(-10);
     for (const msg of recentHistory) {
       if (msg.role === "user" || msg.role === "assistant") {
         messages.push({
           role: msg.role as "user" | "assistant",
-          content: msg.content,
+          content:
+            msg.role === "assistant"
+              ? extractNarration(msg.content)
+              : msg.content,
         });
       }
     }
   }
 
-  if (userInput) {
-    messages.push({ role: "user", content: userInput });
-  }
+  // 易变状态放在消息序列末尾（而非 system 尾部）：
+  // 静态前缀 + 历史保持字节稳定，可被前缀缓存命中，每回合只需 prefill 新增部分
+  const stateBlock = save
+    ? `【当前游戏状态】\n${loadGameContext(save)}\n\n`
+    : "";
 
-  if (!userInput && isFirstMessage) {
+  if (userInput) {
     messages.push({
       role: "user",
-      content: "请开始游戏序章，描述主角醒来时的场景。",
+      content: `${stateBlock}【玩家行动】\n${userInput}`,
+    });
+  } else if (isFirstMessage) {
+    messages.push({
+      role: "user",
+      content: `${stateBlock}请开始游戏序章，描述主角醒来时的场景。`,
+    });
+  } else {
+    messages.push({
+      role: "user",
+      content: `${stateBlock}请继续推进剧情。`,
     });
   }
 

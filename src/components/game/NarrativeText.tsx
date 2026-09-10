@@ -1,5 +1,7 @@
 "use client"
 
+import { useMemo } from "react"
+
 interface Segment {
   type: "narration" | "dialogue" | "thought" | "emphasis" | "action" | "character_dialogue"
   text: string
@@ -89,7 +91,8 @@ interface NarrativeTextProps {
 }
 
 export function NarrativeText({ text, characterEmoji = {} }: NarrativeTextProps) {
-  const segments = parseNarrative(text)
+  // 流式期间 text 每个 chunk 都在变，memo 避免已完成段落的重复解析
+  const segments = useMemo(() => parseNarrative(text), [text])
 
   function getCharacterEmoji(name: string): string {
     return characterEmoji[name] || "👤"

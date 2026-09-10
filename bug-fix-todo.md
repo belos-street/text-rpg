@@ -14,6 +14,7 @@
 | `e2e28e4` | R2：`.env.local` 移出版本控制 + 恢复 gitignore 规则 |
 | `82249a8` | 第一批：R1 持久化静默吞错、No.1 路径穿越、No.2 流式增量重复、No.3 好感度 ID、No.4 JSON 三道闸（zod + parser 重写）、No.12 围栏提取、parser 测试 20 用例 |
 | `06e7861` | 批次 1：#26 空 key、#27 会话损坏备份、#28 停止竞态、#29 两处卡死、#30 时间戳 ISO、#32 写队列、generateId 降级兼容 hex20 |
+| 本批提交 | 批次 2+3+4：状态一致性 5 项、上下文性能 7 项（实测 32k→26k tokens + 前缀缓存友好）、测试基建 47 用例、顺带完成 B1/B4/No.13 |
 
 ---
 
@@ -60,51 +61,35 @@
 
 ---
 
-## 批次 2 · 状态一致性 🟡（消灭双写漂移）
+## 批次 2 · 状态一致性 🟡（✅ 已完成）
 
-- [ ] **#5 clamp 收敛服务端单点** 🟡 M
-  - 位置：[route.ts#L138-141](file:///Users/belos/code/personal/text-rpg/src/app/api/chat/route.ts#L138-L141)
-  - 改法：抽 `applyStateChanges(save, changes)` helper——hp/mp clamp `[0,max]`、gold ≥0、**day 只增不减**（顺带实现 B6 一半）；客户端 [page.tsx#L125-141](file:///Users/belos/code/personal/text-rpg/src/app/page.tsx#L125-L141) 改为纯展示
-- [ ] **#11 onNewItems 状态突变** 🟡 S
-  - 位置：[page.tsx#L158-171](file:///Users/belos/code/personal/text-rpg/src/app/page.tsx#L158-L171)
-  - 改法：`existing.quantity += 1` 改为 immutable map 返回新对象
-- [ ] **#8 config 竞态覆盖读档** 🟡 S
-  - 位置：[page.tsx#L187-204](file:///Users/belos/code/personal/text-rpg/src/app/page.tsx#L187-L204)
-  - 改法：`gameStartedRef` 守卫——已开局则跳过 initialState 应用
-- [ ] **#6 + #7 历史与记忆补 day/chapter** 🟡 M
-  - 位置：route.ts 持久化块
-  - 改法：`appendConversation` 存入当时的 day/chapter；服务端写 memories 时从 save 补全（修好重载后"按天回看"）
-- [ ] **#31 Sidebar 无 chapter 记忆在每章节重复** 🟡 S（依赖上一条）
-  - 位置：[Sidebar.tsx#L67](file:///Users/belos/code/personal/text-rpg/src/components/game/Sidebar.tsx#L67)
-  - 改法：去掉 `(m.chapter ?? chapter)` 的宽容匹配，无 chapter 归入当前存档章节
+- [x] **#5 clamp 收敛服务端单点** 🟡 M：`applyStateChanges(save, changes)` helper——hp/mp clamp `[0,max]`、gold ≥0、**day 只增不减**（B6 部分）；SSE 发射与持久化都走该函数
+- [x] **#11 onNewItems 状态突变** 🟡 S：immutable 索引替换
+- [x] **#8 config 竞态覆盖读档** 🟡 S：`gameStartedRef` 守卫
+- [x] **#6 + #7 历史与记忆补 day/chapter** 🟡 M：appendConversation 消息与新建 memories 均带当时 day/chapter
+- [x] **#31 Sidebar 无 chapter 记忆在每章节重复** 🟡 S：`(m.chapter || "未知章节")` 严格匹配
 
 ---
 
-## 批次 3 · 上下文性能 🟡（32k → ~15k tokens，方案详见附录 D）
+## 批次 3 · 上下文性能 🟡（✅ 已完成，实测 32k → 26k tokens + 前缀缓存友好）
 
-- [ ] **S1 历史压缩为 narration-only**（= No.9）🟡 M
-  - 位置：[prompts.ts#L172-182](file:///Users/belos/code/personal/text-rpg/src/lib/prompts.ts#L172-L182)
-  - 改法：`buildMessages` 喂历史前对 assistant 消息 `extractNarration`；存储原文不动（选项恢复依赖）
-- [ ] **S2 易变状态后置（救前缀缓存）** 🟡 M
-  - 改法：消息序列改为 `system(静态规则) → history → system(当前状态) → user`，静态层字节稳定可被 LM Studio KV cache 命中
-- [ ] **S3 历史窗口 20 → 10** 🟡 S
-- [ ] **S4 删除 `trimConversationForTokenLimit` 死代码**（= No.15 部分）⚪ S
-- [ ] **#17 服务端流式解析节流** ⚪ S
-  - 改法：`{`/`}` 计数不平衡时跳过 parseGameUpdate
-- [ ] **#33 parseNarrative 加 useMemo** ⚪ S
-  - 位置：[NarrativeText.tsx#L92](file:///Users/belos/code/personal/text-rpg/src/components/game/NarrativeText.tsx#L92)
-- [ ] **#21 game-data mtime 缓存** ⚪ S
-  - 位置：[game-data.ts](file:///Users/belos/code/personal/text-rpg/src/lib/game-data.ts)；按文件 mtime 失效，保住 dev 热更新
+- [x] **S1 历史压缩为 narration-only**（= No.9）🟡 M：`buildMessages` 对 assistant 历史 `extractNarration`；存储原文不动
+- [x] **S2 易变状态后置（救前缀缓存）** 🟡 M：`system(静态) → history → user(状态块+行动)`，静态前缀字节稳定可被 KV cache 命中
+- [x] **S3 历史窗口 20 → 10** 🟡 S
+- [x] **S4 删除 `trimConversationForTokenLimit` 死代码**（= No.15 部分）⚪ S
+- [x] **#17 服务端流式解析节流** ⚪ S：花括号平衡计数，闭合前只跑轻量 narrationPreview
+- [x] **#33 parseNarrative 加 useMemo** ⚪ S
+- [x] **#21 game-data mtime 缓存** ⚪ S：readMdFile/loadStoryConfig 按 mtime 失效，config 解析失败有日志
 
 ---
 
-## 批次 4 · 测试基建 🟡（parser 已有 20 用例 ✅）
+## 批次 4 · 测试基建 🟡（✅ 已完成，47 用例全绿）
 
-- [ ] **affection.test.ts**：阶段边界 20/21/60/61/95/96/100/NaN/越界
-- [ ] **storage.test.ts**：临时目录注入；create/list/update 记忆裁剪/delete 联动/损坏 JSON/非法 id 被拒（验证 No.1）
-- [ ] **prompts.test.ts**：buildMessages 消息顺序（验证 S2）、历史压缩、关系段含 ID
-- [ ] **scripts 补全**：`"test": "bun test"`、`"verify": "bun run lint && bun test && bunx tsc --noEmit"`
-- [ ] **#34 summary JSON 污染修复**（与测试同批做）：`summarizeConversation` 对 assistant 消息先 `extractNarration` 再截断
+- [x] **affection.test.ts**：阶段边界与非法输入
+- [x] **storage.test.ts**：`STORAGE_DATA_DIR` 注入临时目录；裁剪/损坏备份/路径穿越/删除联动全覆盖
+- [x] **prompts.test.ts**：S1 历史压缩、S2 消息顺序、关系 ID、B1 玩家名、No.16 无副作用
+- [x] **scripts 补全**：`bun test`、`bun run verify`（lint+test+tsc）
+- [x] **#34 summary JSON 污染修复**：assistant 消息先 `extractNarration` 再进摘要
 
 ---
 
@@ -123,11 +108,11 @@
 
 ## 批次 6a · 游戏内容一致性 S（纯提示词/文案，立竿见影）
 
-- [ ] **B1 玩家名字注入** 💡 S：`loadGameContext` 玩家状态行加 `玩家：{save.playerName}`——现在 AI 根本不知道主角叫什么
+- [x] **B1 玩家名字注入** 💡 S：状态块含 `玩家:{save.playerName}`（随批次 2+3 顺带完成）
 - [ ] **B2 scene 回喂** 💡 S：氛围/天气并入状态段或 StatusBar，终结死数据闭环
 - [ ] **B3 人称统一** 💡 S：core-rules.md 第二人称 vs prompts.ts 第一人称矛盾，二选一（建议第一人称，改 core-rules.md）
-- [ ] **B4 删除 R-18 引用** 💡 S：[prompts.ts#L147](file:///Users/belos/code/personal/text-rpg/src/lib/prompts.ts#L147) 引用了不存在的规则
-- [ ] **No.13 剩余静默吞错补日志** 🟡 S：listSaves 损坏存档、page.tsx config catch
+- [x] **B4 删除 R-18 引用** 💡 S：prompts.ts 改为"保持全年龄向的含蓄与美感"（随批次 3 顺带完成）
+- [x] **No.13 剩余静默吞错补日志** 🟡 S：listSaves 损坏存档、page.tsx config catch 均已补日志与用户可见提示
 
 ## 批次 6b · 游戏系统升级 💡（动 schema，依赖 6a）
 

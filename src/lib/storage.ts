@@ -2,10 +2,19 @@ import fs from "fs";
 import path from "path";
 import { generateId } from "./utils";
 import { loadStoryConfig } from "./game-data";
+import { extractNarration } from "./parser";
 import type { SaveData, SaveMeta, Message } from "@/types";
 
-const SAVES_DIR = path.join(process.cwd(), "data", "saves");
-const CONVERSATIONS_DIR = path.join(process.cwd(), "data", "conversations");
+// 数据目录可通过环境变量注入（测试隔离用），默认项目根目录 data/
+function dataDir(): string {
+  return process.env.STORAGE_DATA_DIR || path.join(process.cwd(), "data");
+}
+function savesDir(): string {
+  return path.join(dataDir(), "saves");
+}
+function conversationsDir(): string {
+  return path.join(dataDir(), "conversations");
+}
 const MAX_MEMORIES = 20;
 // generateId 产生 10 字节随机数的 hex（20 字符），在此收紧格式以防路径穿越
 const SAVE_ID_PATTERN = /^[a-f0-9]{20}$/;
@@ -34,21 +43,21 @@ function enqueueWrite<T>(id: string, task: () => T): Promise<T> {
 }
 
 function savePath(id: string): string {
-  return path.join(SAVES_DIR, `${id}.json`);
+  return path.join(savesDir(), `${id}.json`);
 }
 
 function conversationPath(id: string): string {
-  return path.join(CONVERSATIONS_DIR, `${id}.json`);
+  return path.join(conversationsDir(), `${id}.json`);
 }
 
 export function listSaves(): SaveMeta[] {
-  ensureDir(SAVES_DIR);
-  const files = fs.readdirSync(SAVES_DIR).filter((f) => f.endsWith(".json"));
+  ensureDir(savesDir());
+  const files = fs.readdirSync(savesDir()).filter((f) => f.endsWith(".json"));
   return files
     .map((f) => {
       try {
         const data: SaveData = JSON.parse(
-          fs.readFileSync(path.join(SAVES_DIR, f), "utf-8"),
+          fs.readFileSync(path.join(savesDir(), f), "utf-8"),
         );
         return {
           id: data.id,
@@ -67,7 +76,8 @@ export function listSaves(): SaveMeta[] {
           maxMp: data.maxMp,
           gold: data.gold,
         } as SaveMeta;
-      } catch {
+      } catch (error) {
+        console.error(`[storage] 存档文件损坏，已从列表跳过: ${f}`, error);
         return null;
       }
     })
@@ -78,7 +88,7 @@ export function listSaves(): SaveMeta[] {
 export function getSave(id: string): SaveData | null {
   const validId = normalizeSaveId(id);
   if (!validId) return null;
-  ensureDir(SAVES_DIR);
+  ensureDir(savesDir());
   try {
     const raw = fs.readFileSync(savePath(validId), "utf-8");
     return JSON.parse(raw) as SaveData;
@@ -90,7 +100,7 @@ export function getSave(id: string): SaveData | null {
 export function createSave(
   data: Omit<SaveData, "id" | "createdAt" | "updatedAt">,
 ): SaveData {
-  ensureDir(SAVES_DIR);
+  ensureDir(savesDir());
   const save: SaveData = {
     ...data,
     id: generateId(),
@@ -155,7 +165,7 @@ export function deleteSave(id: string): boolean {
 export function getConversation(saveId: string): Message[] {
   const validId = normalizeSaveId(saveId);
   if (!validId) return [];
-  ensureDir(CONVERSATIONS_DIR);
+  ensureDir(conversationsDir());
   const filePath = conversationPath(validId);
   try {
     const raw = fs.readFileSync(filePath, "utf-8");
@@ -177,7 +187,7 @@ export function getConversation(saveId: string): Message[] {
 }
 
 function appendConversationNow(validId: string, messages: Message[]) {
-  ensureDir(CONVERSATIONS_DIR);
+  ensureDir(conversationsDir());
   const existing = getConversation(validId);
   const updated = [...existing, ...messages];
   fs.writeFileSync(
@@ -204,8 +214,10 @@ export function summarizeConversation(
   const keyEvents = lastMessages
     .filter((m) => m.role !== "system")
     .map((m) => {
+      // assistant 存的是原始 JSON，先提取叙述再截断，避免 {"type":... 污染摘要
+      const source = m.role === "assistant" ? extractNarration(m.content) : m.content;
       const content =
-        m.content.length > 120 ? m.content.slice(0, 120) + "..." : m.content;
+        source.length > 120 ? source.slice(0, 120) + "..." : source;
       return `${m.role === "user" ? "玩家" : "旁白"}: ${content}`;
     })
     .join("\n");

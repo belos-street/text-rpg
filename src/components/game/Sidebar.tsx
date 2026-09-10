@@ -64,7 +64,8 @@ export function Sidebar({
         days: days.map((day) => ({
           day,
           memories: memories.filter(
-            (m) => (m.chapter ?? chapter) === chapter && (m.day ?? 1) === day,
+            (m) =>
+              (m.chapter || "未知章节") === chapter && (m.day ?? 1) === day,
           ),
         })),
       })

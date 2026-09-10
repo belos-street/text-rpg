@@ -37,9 +37,17 @@ export interface StoryConfig {
 
 const GAME_DATA_DIR = path.join(process.cwd(), "game-data");
 
+// 按 mtime 失效的内容缓存：避免每回合重复读盘，同时保住 dev 时改档热更新
+const fileCache = new Map<string, { mtimeMs: number; content: string }>();
+
 function readMdFile(filePath: string): string {
   try {
-    return fs.readFileSync(filePath, "utf-8");
+    const mtimeMs = fs.statSync(filePath).mtimeMs;
+    const cached = fileCache.get(filePath);
+    if (cached && cached.mtimeMs === mtimeMs) return cached.content;
+    const content = fs.readFileSync(filePath, "utf-8");
+    fileCache.set(filePath, { mtimeMs, content });
+    return content;
   } catch {
     return "";
   }
@@ -150,11 +158,15 @@ export function loadEssentialGameData(): string {
 
 export function loadStoryConfig(): StoryConfig {
   const configPath = path.join(GAME_DATA_DIR, "00_故事配置", "config.json");
-  try {
-    const raw = fs.readFileSync(configPath, "utf-8");
-    return JSON.parse(raw) as StoryConfig;
-  } catch {
-    return {
+  const raw = readMdFile(configPath);
+  if (raw) {
+    try {
+      return JSON.parse(raw) as StoryConfig;
+    } catch (error) {
+      console.error("[game-data] config.json 解析失败，使用默认配置:", error);
+    }
+  }
+  return {
       title: "未命名故事",
       subtitle: "请配置 game-data/00_故事配置/config.json",
       loadingText: "加载中……",
@@ -183,6 +195,5 @@ export function loadStoryConfig(): StoryConfig {
         { max: 100, label: "熟悉", actionDescriptions: [] },
       ],
       initialRelations: [],
-    };
-  }
+  };
 }

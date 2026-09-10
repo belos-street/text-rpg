@@ -12,9 +12,34 @@ import {
 import { parseGameUpdate, narrationPreview } from "@/lib/parser";
 import { getAffectionStage } from "@/lib/affection";
 import { generateId } from "@/lib/utils";
+import type { ParsedGameUpdate } from "@/lib/schema";
 import type { SaveData, GameEvent, Message } from "@/types";
 
 export const runtime = "nodejs";
+
+// 状态变更的唯一合法入口：数值 clamp 到合法区间、day 只增不减（引擎侧硬执法）
+function applyStateChanges(
+  save: SaveData,
+  changes: NonNullable<ParsedGameUpdate["stateChanges"]>,
+): Partial<SaveData> {
+  const next: Partial<SaveData> = {};
+  if (changes.hp !== undefined) {
+    next.hp = Math.max(0, Math.min(save.maxHp, changes.hp));
+  }
+  if (changes.mp !== undefined) {
+    next.mp = Math.max(0, Math.min(save.maxMp, changes.mp));
+  }
+  if (changes.gold !== undefined) {
+    next.gold = Math.max(0, changes.gold);
+  }
+  if (changes.day !== undefined) {
+    next.day = Math.max(save.day, Math.floor(changes.day));
+  }
+  if (changes.location) next.location = changes.location;
+  if (changes.chapter) next.chapter = changes.chapter;
+  if (changes.time) next.time = changes.time;
+  return next;
+}
 
 export async function POST(req: NextRequest) {
   if (!checkConfig()) {
@@ -55,12 +80,21 @@ export async function POST(req: NextRequest) {
       // 解析字段只发一次：JSON 闭合后的尾随 chunk 会让 parseGameUpdate 反复成功，
       // 增量字段（harmonyChange/affectionChanges/newItems）若重复 emit 会被前端重复累加
       let updateEmitted = false;
+      // 花括号平衡计数：JSON 闭合前跳过重解析，避免流式期间 O(n²) 的解析开销
+      let openBraces = 0;
 
       try {
         for await (const chunk of streamChat(messages)) {
           fullContent += chunk;
+          for (const ch of chunk) {
+            if (ch === "{") openBraces++;
+            else if (ch === "}") openBraces--;
+          }
 
-          const parsed = parseGameUpdate(fullContent);
+          const parsed =
+            openBraces <= 0 && fullContent.includes("{")
+              ? parseGameUpdate(fullContent)
+              : null;
 
           const payload: Record<string, unknown> = {
             content: fullContent,
@@ -77,7 +111,7 @@ export async function POST(req: NextRequest) {
               payload.newMemory = parsed.newMemory;
             }
             if (parsed.stateChanges) {
-              payload.stateChanges = parsed.stateChanges;
+              payload.stateChanges = applyStateChanges(save, parsed.stateChanges);
             }
             if (parsed.affectionChanges) {
               payload.affectionChanges = parsed.affectionChanges;
@@ -115,10 +149,14 @@ export async function POST(req: NextRequest) {
         const userMsg: Message = {
           role: "user",
           content: message || "开始游戏",
+          day: save!.day,
+          chapter: save!.chapter,
         };
         const assistantMsg: Message = {
           role: "assistant",
           content: fullContent,
+          day: save!.day,
+          chapter: save!.chapter,
         };
         await appendConversation(save!.id, [userMsg, assistantMsg]);
 
@@ -138,17 +176,10 @@ export async function POST(req: NextRequest) {
           const freshSave = getSave(save!.id) || save!;
 
           if (parsed.stateChanges) {
-            updateData.hp = parsed.stateChanges.hp ?? freshSave.hp;
-            updateData.mp = parsed.stateChanges.mp ?? freshSave.mp;
-            updateData.gold = parsed.stateChanges.gold ?? freshSave.gold;
-            if (parsed.stateChanges.location)
-              updateData.location = parsed.stateChanges.location;
-            if (parsed.stateChanges.chapter)
-              updateData.chapter = parsed.stateChanges.chapter;
-            if (parsed.stateChanges.day)
-              updateData.day = parsed.stateChanges.day;
-            if (parsed.stateChanges.time)
-              updateData.time = parsed.stateChanges.time;
+            Object.assign(
+              updateData,
+              applyStateChanges(freshSave, parsed.stateChanges),
+            );
           }
 
           if (parsed.affectionChanges) {
@@ -209,6 +240,8 @@ export async function POST(req: NextRequest) {
                   content: event.content,
                   importance: event.importance,
                   createdAt: new Date().toISOString(),
+                  day: freshSave.day,
+                  chapter: freshSave.chapter,
                 },
               ];
             }

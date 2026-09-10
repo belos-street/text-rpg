@@ -55,6 +55,7 @@ export default function GamePage() {
   const messagesRef = useRef(messages)
   playerStateRef.current = playerState
   messagesRef.current = messages
+  const gameStartedRef = useRef(false)
   const [choices, setChoices] = useState<Choice[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
@@ -159,9 +160,9 @@ export default function GamePage() {
       setInventory((prev) => {
         const updated = [...prev]
         for (const item of items) {
-          const existing = updated.find((i) => i.itemId === item.id)
-          if (existing) {
-            existing.quantity += 1
+          const idx = updated.findIndex((i) => i.itemId === item.id)
+          if (idx !== -1) {
+            updated[idx] = { ...updated[idx], quantity: updated[idx].quantity + 1 }
           } else {
             updated.push({ itemId: item.id, itemName: item.name, quantity: 1 })
           }
@@ -197,11 +198,15 @@ export default function GamePage() {
           emptyChatTitle: cfg.emptyChatTitle || '欢迎',
           emptyChatSubtitle: cfg.emptyChatSubtitle || '',
         })
-        if (cfg.initialState) {
+        if (cfg.initialState && !gameStartedRef.current) {
+          // 防竞态：读档/开局后 config 才 resolve 时，不用初始值覆盖存档状态
           setPlayerState((prev) => ({ ...prev, ...cfg.initialState }))
         }
       })
-      .catch(() => {})
+      .catch((error) => {
+        console.error('[config] 故事配置加载失败:', error)
+        setStoryConfig((prev) => ({ ...prev, title: '配置加载失败', loadingText: '加载失败，请刷新重试' }))
+      })
 
     const params = new URLSearchParams(window.location.search)
     const loadId = params.get('load')
@@ -303,6 +308,7 @@ export default function GamePage() {
     setSelectedDay(save.day)
     setShowTitleScreen(false)
     setGameStarted(true)
+    gameStartedRef.current = true
   }
 
   const startNewGame = useCallback(async () => {
@@ -311,6 +317,7 @@ export default function GamePage() {
     setPlayerState((prev) => ({ ...prev, playerName: name }))
     setShowTitleScreen(false)
     setGameStarted(true)
+    gameStartedRef.current = true
     setIsLoading(true)
 
     try {
