@@ -7,11 +7,17 @@ import type { SaveData, SaveMeta, Message } from "@/types";
 const SAVES_DIR = path.join(process.cwd(), "data", "saves");
 const CONVERSATIONS_DIR = path.join(process.cwd(), "data", "conversations");
 const MAX_MEMORIES = 20;
+// generateId 产生 10 字节随机数的 hex（20 字符），在此收紧格式以防路径穿越
+const SAVE_ID_PATTERN = /^[a-f0-9]{20}$/;
 
 function ensureDir(dir: string) {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
+}
+
+function normalizeSaveId(id: string): string | null {
+  return SAVE_ID_PATTERN.test(id) ? id : null;
 }
 
 function savePath(id: string): string {
@@ -57,9 +63,11 @@ export function listSaves(): SaveMeta[] {
 }
 
 export function getSave(id: string): SaveData | null {
+  const validId = normalizeSaveId(id);
+  if (!validId) return null;
   ensureDir(SAVES_DIR);
   try {
-    const raw = fs.readFileSync(savePath(id), "utf-8");
+    const raw = fs.readFileSync(savePath(validId), "utf-8");
     return JSON.parse(raw) as SaveData;
   } catch {
     return null;
@@ -84,7 +92,9 @@ export function updateSave(
   id: string,
   data: Partial<SaveData>,
 ): SaveData | null {
-  const save = getSave(id);
+  const validId = normalizeSaveId(id);
+  if (!validId) return null;
+  const save = getSave(validId);
   if (!save) return null;
 
   let memories = data.memories || save.memories;
@@ -106,14 +116,16 @@ export function updateSave(
     updatedAt: new Date().toISOString(),
     memories,
   };
-  fs.writeFileSync(savePath(id), JSON.stringify(updated, null, 2), "utf-8");
+  fs.writeFileSync(savePath(validId), JSON.stringify(updated, null, 2), "utf-8");
   return updated;
 }
 
 export function deleteSave(id: string): boolean {
+  const validId = normalizeSaveId(id);
+  if (!validId) return false;
   try {
-    fs.unlinkSync(savePath(id));
-    const convPath = conversationPath(id);
+    fs.unlinkSync(savePath(validId));
+    const convPath = conversationPath(validId);
     if (fs.existsSync(convPath)) {
       fs.unlinkSync(convPath);
     }
@@ -124,9 +136,11 @@ export function deleteSave(id: string): boolean {
 }
 
 export function getConversation(saveId: string): Message[] {
+  const validId = normalizeSaveId(saveId);
+  if (!validId) return [];
   ensureDir(CONVERSATIONS_DIR);
   try {
-    const raw = fs.readFileSync(conversationPath(saveId), "utf-8");
+    const raw = fs.readFileSync(conversationPath(validId), "utf-8");
     return JSON.parse(raw) as Message[];
   } catch {
     return [];
@@ -134,11 +148,13 @@ export function getConversation(saveId: string): Message[] {
 }
 
 export function appendConversation(saveId: string, messages: Message[]) {
+  const validId = normalizeSaveId(saveId);
+  if (!validId) return;
   ensureDir(CONVERSATIONS_DIR);
-  const existing = getConversation(saveId);
+  const existing = getConversation(validId);
   const updated = [...existing, ...messages];
   fs.writeFileSync(
-    conversationPath(saveId),
+    conversationPath(validId),
     JSON.stringify(updated, null, 2),
     "utf-8",
   );

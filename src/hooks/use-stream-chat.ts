@@ -76,6 +76,14 @@ export function useStreamChat(callbacks: StreamChatCallbacks) {
                 continue;
               }
 
+              if (payload.persistError) {
+                callbacks.onError({
+                  role: "assistant",
+                  content: `[系统] ${payload.persistError}`,
+                });
+                continue;
+              }
+
               if (payload.content) {
                 if (!hasReceivedContent) {
                   hasReceivedContent = true;

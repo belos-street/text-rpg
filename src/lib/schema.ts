@@ -1,0 +1,75 @@
+import { z } from "zod";
+
+/**
+ * LLM 输出的 game_update 校验层。
+ * 策略：字段级容错（coerce + catch），坏字段剔除而非整体拒绝，
+ * 保证 route 层拿到的数据类型安全。
+ */
+
+// z.coerce.string() 会把 undefined 变成 "undefined"，因此缺失字段先归一为 fallback
+const coerceString = (fallback: string) =>
+  z.preprocess(
+    (v) => (v === undefined || v === null ? fallback : v),
+    z.coerce.string().catch(fallback),
+  );
+
+const choiceSchema = z.object({
+  id: coerceString(""),
+  text: coerceString(""),
+});
+
+const stateChangesSchema = z
+  .object({
+    hp: z.coerce.number().optional().catch(undefined),
+    mp: z.coerce.number().optional().catch(undefined),
+    gold: z.coerce.number().optional().catch(undefined),
+    location: coerceString("").optional().catch(undefined),
+    chapter: coerceString("").optional().catch(undefined),
+    day: z.coerce.number().optional().catch(undefined),
+    time: coerceString("").optional().catch(undefined),
+  })
+  .optional()
+  .catch(undefined);
+
+const memoryTypeSchema = z
+  .enum(["event", "decision", "item", "relationship"])
+  .catch("event");
+
+export const gameUpdateSchema = z.object({
+  type: z.string().optional(),
+  narration: coerceString(""),
+  choices: z.array(choiceSchema).max(8).catch([]),
+  stateChanges: stateChangesSchema,
+  affectionChanges: z
+    .record(z.string(), z.coerce.number())
+    .optional()
+    .catch(undefined),
+  harmonyChange: z.coerce.number().optional().catch(undefined),
+  newMemory: z
+    .object({
+      type: memoryTypeSchema,
+      content: coerceString(""),
+      importance: z.coerce.number().min(1).max(10).catch(5),
+    })
+    .optional()
+    .catch(undefined),
+  newItems: z
+    .array(
+      z.object({
+        id: coerceString(""),
+        name: coerceString(""),
+      }),
+    )
+    .optional()
+    .catch(undefined),
+  scene: z
+    .object({
+      mood: coerceString(""),
+      weather: coerceString(""),
+      time: coerceString(""),
+    })
+    .optional()
+    .catch(undefined),
+});
+
+export type ParsedGameUpdate = z.infer<typeof gameUpdateSchema>;

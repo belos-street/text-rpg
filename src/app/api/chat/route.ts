@@ -9,11 +9,7 @@ import {
   getConversation,
   summarizeConversation,
 } from "@/lib/storage";
-import {
-  parseGameUpdate,
-  extractNarration,
-  extractChoices,
-} from "@/lib/parser";
+import { parseGameUpdate, narrationPreview } from "@/lib/parser";
 import { getAffectionStage } from "@/lib/affection";
 import { generateId } from "@/lib/utils";
 import type { SaveData, GameEvent, Message } from "@/types";
@@ -56,21 +52,27 @@ export async function POST(req: NextRequest) {
   const stream = new ReadableStream({
     async start(controller) {
       let fullContent = "";
+      // 解析字段只发一次：JSON 闭合后的尾随 chunk 会让 parseGameUpdate 反复成功，
+      // 增量字段（harmonyChange/affectionChanges/newItems）若重复 emit 会被前端重复累加
+      let updateEmitted = false;
 
       try {
         for await (const chunk of streamChat(messages)) {
           fullContent += chunk;
 
-          const currentChoices = extractChoices(fullContent);
+          const parsed = parseGameUpdate(fullContent);
 
           const payload: Record<string, unknown> = {
             content: fullContent,
-            narration: extractNarration(fullContent),
-            choices: currentChoices,
+            narration:
+              parsed && parsed.narration !== ""
+                ? parsed.narration
+                : narrationPreview(fullContent),
+            choices: parsed?.choices ?? [],
           };
 
-          const parsed = parseGameUpdate(fullContent);
-          if (parsed) {
+          if (parsed && !updateEmitted) {
+            updateEmitted = true;
             if (parsed.newMemory) {
               payload.newMemory = parsed.newMemory;
             }
@@ -100,13 +102,13 @@ export async function POST(req: NextRequest) {
           encoder.encode(`data: ${JSON.stringify({ done: true })}\n\n`),
         );
       } catch (error) {
-        controller.enqueue(
-          encoder.encode(
-            `data: ${JSON.stringify({ error: error instanceof Error ? error.message : "未知错误" })}\n\n`,
-          ),
-        );
-      } finally {
-        controller.close();
+        try {
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({ error: error instanceof Error ? error.message : "未知错误" })}\n\n`,
+            ),
+          );
+        } catch {}
       }
 
       try {
@@ -231,8 +233,19 @@ export async function POST(req: NextRequest) {
         }
 
         updateSave(save!.id, updateData);
-      } catch {
-        // silent
+      } catch (error) {
+        console.error("[chat] 存档持久化失败:", error);
+        try {
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({ persistError: "本回合进度保存失败，最新状态可能未写入存档，请查看服务端日志" })}\n\n`,
+            ),
+          );
+        } catch {}
+      } finally {
+        try {
+          controller.close();
+        } catch {}
       }
     },
   });

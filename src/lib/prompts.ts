@@ -15,7 +15,10 @@ export function loadGameContext(save: SaveData): string {
     .join("\n");
 
   const relations = save.relations
-    .map((r) => `${r.characterName}: 好感度${r.affection} (${r.stage})`)
+    .map(
+      (r) =>
+        `- ${r.characterName}（ID: ${r.characterId}）：好感度 ${r.affection}（${r.stage}）`,
+    )
     .join("\n");
 
   const inventory = save.inventory
@@ -118,7 +121,7 @@ ${characterEmojiLines || "- 无预设角色"}
     "time": "时间变化"
   },
   "affectionChanges": {
-    "角色ID": 好感度变化值（正负整数）
+    "角色ID": 好感度变化值（正负整数，-5到5。key 必须使用【角色关系】中括号内的 ID，如 "lia"，禁止使用角色名）
   },
   "harmonyChange": 后宫和睦度变化值（-5到5之间的整数）,
   "newMemory": {
