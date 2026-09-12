@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { SaveSlot } from '@/components/saves/SaveSlot'
+import { SaveSlot } from '@/components/saves/save-slot'
 import { Button } from '@/components/ui/button'
 import { ArrowLeft } from 'lucide-react'
 import type { SaveMeta } from '@/types'

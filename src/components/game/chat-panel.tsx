@@ -2,7 +2,7 @@
 
 import { memo, useCallback, useEffect, useRef, useMemo, useState } from 'react'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { NarrativeText } from './NarrativeText'
+import { NarrativeText } from './narrative-text'
 import type { Message } from '@/types'
 
 interface ChatPanelProps {
