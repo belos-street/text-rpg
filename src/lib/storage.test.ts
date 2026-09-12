@@ -1,29 +1,29 @@
-import { describe, test, expect, beforeAll, afterAll } from "bun:test";
-import fs from "fs";
-import os from "os";
-import path from "path";
-import { Database } from "bun:sqlite";
+import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
+import { Database } from 'bun:sqlite'
 
 // 必须在动态 import 之前设置：storage 在模块内读取该环境变量
-const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "text-rpg-storage-"));
-process.env.STORAGE_DATA_DIR = tmpRoot;
+const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'text-rpg-storage-'))
+process.env.STORAGE_DATA_DIR = tmpRoot
 
-const LEGACY_ID = "dddddddddddddddddddd";
+const LEGACY_ID = 'dddddddddddddddddddd'
 
 // 迁移夹具：在首次建库前写入旧版 JSON 文件，
 // 验证 storage 首次访问时自动迁移到 SQLite（旧文件改名 .migrated）
 function writeLegacyFixtures() {
   const legacySave = {
     id: LEGACY_ID,
-    name: "迁移存档",
+    name: '迁移存档',
     slot: 9,
-    createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z",
-    playerName: "迁移来的玩家",
-    chapter: "序章",
-    location: "旧城区",
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    playerName: '迁移来的玩家',
+    chapter: '序章',
+    location: '旧城区',
     day: 1,
-    time: "黄昏",
+    time: '黄昏',
     hp: 80,
     maxHp: 80,
     mp: 30,
@@ -33,45 +33,47 @@ function writeLegacyFixtures() {
     inventory: [],
     memories: [],
     flags: {},
-    summary: "",
+    summary: '',
     harmony: 50,
-    scene: null,
-  };
-  fs.mkdirSync(path.join(tmpRoot, "saves"), { recursive: true });
-  fs.mkdirSync(path.join(tmpRoot, "conversations"), { recursive: true });
+    scene: null
+  }
+  fs.mkdirSync(path.join(tmpRoot, 'saves'), { recursive: true })
+  fs.mkdirSync(path.join(tmpRoot, 'conversations'), { recursive: true })
   fs.writeFileSync(
-    path.join(tmpRoot, "saves", `${LEGACY_ID}.json`),
-    JSON.stringify(legacySave),
-  );
+    path.join(tmpRoot, 'saves', `${LEGACY_ID}.json`),
+    JSON.stringify(legacySave)
+  )
   fs.writeFileSync(
-    path.join(tmpRoot, "conversations", `${LEGACY_ID}.json`),
-    JSON.stringify([{ role: "user", content: "旧对话内容", day: 1, chapter: "序章" }]),
-  );
+    path.join(tmpRoot, 'conversations', `${LEGACY_ID}.json`),
+    JSON.stringify([
+      { role: 'user', content: '旧对话内容', day: 1, chapter: '序章' }
+    ])
+  )
   fs.writeFileSync(
-    path.join(tmpRoot, "global.json"),
+    path.join(tmpRoot, 'global.json'),
     JSON.stringify({
-      unlockedEndings: ["ending_dawn_pact"],
-      updatedAt: "2026-01-02T00:00:00.000Z",
-    }),
-  );
+      unlockedEndings: ['ending_dawn_pact'],
+      updatedAt: '2026-01-02T00:00:00.000Z'
+    })
+  )
 }
-writeLegacyFixtures();
+writeLegacyFixtures()
 
-import type * as StorageModule from "./storage";
-import type * as GlobalProgressModule from "./global-progress";
-import type { SaveData } from "@/types";
+import type * as StorageModule from './storage'
+import type * as GlobalProgressModule from './global-progress'
+import type { SaveData } from '@/types'
 
-let storage: typeof StorageModule;
-let globalProgress: typeof GlobalProgressModule;
+let storage: typeof StorageModule
+let globalProgress: typeof GlobalProgressModule
 
 function makeMemory(content: string, importance: number) {
   return {
     id: `mem-${content}-${importance}-${Math.random().toString(36).slice(2, 6)}`,
-    type: "event" as const,
+    type: 'event' as const,
     content,
     importance,
-    createdAt: new Date().toISOString(),
-  };
+    createdAt: new Date().toISOString()
+  }
 }
 
 function makeSaveData(id: string): SaveData {
@@ -81,11 +83,11 @@ function makeSaveData(id: string): SaveData {
     slot: 1,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
-    playerName: "测试者",
-    chapter: "序章",
-    location: "王都",
+    playerName: '测试者',
+    chapter: '序章',
+    location: '王都',
     day: 1,
-    time: "黄昏",
+    time: '黄昏',
     hp: 80,
     maxHp: 80,
     mp: 30,
@@ -95,257 +97,263 @@ function makeSaveData(id: string): SaveData {
     inventory: [],
     memories: [],
     flags: {},
-    summary: "",
+    summary: '',
     harmony: 50,
-    scene: null,
-  };
+    scene: null
+  }
 }
 
 beforeAll(async () => {
-  storage = await import("./storage");
-  globalProgress = await import("./global-progress");
-});
+  storage = await import('./storage')
+  globalProgress = await import('./global-progress')
+})
 
 afterAll(() => {
-  fs.rmSync(tmpRoot, { recursive: true, force: true });
-});
+  fs.rmSync(tmpRoot, { recursive: true, force: true })
+})
 
-describe("旧版 JSON 自动迁移", () => {
-  test("存档、会话、全局进度全部迁入 SQLite", () => {
+describe('旧版 JSON 自动迁移', () => {
+  test('存档、会话、全局进度全部迁入 SQLite', () => {
     // 首个 storage 调用已触发建库+迁移
-    const save = storage.getSave(LEGACY_ID);
-    expect(save?.playerName).toBe("迁移来的玩家");
-    expect(save?.slot).toBe(9);
+    const save = storage.getSave(LEGACY_ID)
+    expect(save?.playerName).toBe('迁移来的玩家')
+    expect(save?.slot).toBe(9)
 
-    const conv = storage.getConversation(LEGACY_ID);
-    expect(conv).toHaveLength(1);
-    expect(conv[0].content).toBe("旧对话内容");
+    const conv = storage.getConversation(LEGACY_ID)
+    expect(conv).toHaveLength(1)
+    expect(conv[0].content).toBe('旧对话内容')
 
-    const progress = globalProgress.getGlobalProgress();
-    expect(progress.unlockedEndings).toContain("ending_dawn_pact");
-  });
+    const progress = globalProgress.getGlobalProgress()
+    expect(progress.unlockedEndings).toContain('ending_dawn_pact')
+  })
 
-  test("旧文件改名 .migrated 备份（不删除）", () => {
+  test('旧文件改名 .migrated 备份（不删除）', () => {
     expect(
-      fs.existsSync(path.join(tmpRoot, "saves", `${LEGACY_ID}.json.migrated`)),
-    ).toBe(true);
+      fs.existsSync(path.join(tmpRoot, 'saves', `${LEGACY_ID}.json.migrated`))
+    ).toBe(true)
     expect(
       fs.existsSync(
-        path.join(tmpRoot, "conversations", `${LEGACY_ID}.json.migrated`),
-      ),
-    ).toBe(true);
-    expect(fs.existsSync(path.join(tmpRoot, "global.json.migrated"))).toBe(true);
-    expect(fs.existsSync(path.join(tmpRoot, "game.db"))).toBe(true);
-  });
-});
+        path.join(tmpRoot, 'conversations', `${LEGACY_ID}.json.migrated`)
+      )
+    ).toBe(true)
+    expect(fs.existsSync(path.join(tmpRoot, 'global.json.migrated'))).toBe(true)
+    expect(fs.existsSync(path.join(tmpRoot, 'game.db'))).toBe(true)
+  })
+})
 
-describe("storage 基础读写", () => {
-  test("createSave → getSave 往返", () => {
-    const created = storage.createSave(makeSaveData("placeholder"));
-    expect(created.id).toMatch(/^[a-f0-9]{20}$/);
-    const loaded = storage.getSave(created.id);
-    expect(loaded?.playerName).toBe("测试者");
-  });
+describe('storage 基础读写', () => {
+  test('createSave → getSave 往返', () => {
+    const created = storage.createSave(makeSaveData('placeholder'))
+    expect(created.id).toMatch(/^[a-f0-9]{20}$/)
+    const loaded = storage.getSave(created.id)
+    expect(loaded?.playerName).toBe('测试者')
+  })
 
-  test("listSaves 返回已创建存档", () => {
-    const saves = storage.listSaves();
-    expect(saves.length).toBeGreaterThanOrEqual(1);
-  });
+  test('listSaves 返回已创建存档', () => {
+    const saves = storage.listSaves()
+    expect(saves.length).toBeGreaterThanOrEqual(1)
+  })
 
-  test("损坏 JSON 的存档行被跳过（不进列表）", () => {
+  test('损坏 JSON 的存档行被跳过（不进列表）', () => {
     // 直接向测试库插入 data 列非法的行，模拟损坏
-    const db = new Database(path.join(tmpRoot, "game.db"));
+    const db = new Database(path.join(tmpRoot, 'game.db'))
     db.run(
       "INSERT OR IGNORE INTO saves (id, slot, player_name, chapter, day, updated_at, data) VALUES (?, 1, '', '', 1, '', '{broken')",
-      ["bbbbbbbbbbbbbbbbbbbb"],
-    );
-    db.close();
-    const saves = storage.listSaves();
-    expect(saves.some((s) => s.id === "bbbbbbbbbbbbbbbbbbbb")).toBe(false);
-  });
-});
+      ['bbbbbbbbbbbbbbbbbbbb']
+    )
+    db.close()
+    const saves = storage.listSaves()
+    expect(saves.some((s) => s.id === 'bbbbbbbbbbbbbbbbbbbb')).toBe(false)
+  })
+})
 
-describe("路径穿越防护（No.1）", () => {
-  test("getSave 拒绝穿越 id", () => {
-    expect(storage.getSave("../../package")).toBeNull();
-    expect(storage.getSave("short")).toBeNull();
-    expect(storage.getSave("GGGGGGGGGGGGGGGGGGGG")).toBeNull();
-  });
+describe('路径穿越防护（No.1）', () => {
+  test('getSave 拒绝穿越 id', () => {
+    expect(storage.getSave('../../package')).toBeNull()
+    expect(storage.getSave('short')).toBeNull()
+    expect(storage.getSave('GGGGGGGGGGGGGGGGGGGG')).toBeNull()
+  })
 
-  test("deleteSave 拒绝穿越 id 且不动真实文件", () => {
-    const sentinel = path.join(tmpRoot, "sentinel.json");
-    fs.writeFileSync(sentinel, "{}");
-    expect(storage.deleteSave("../sentinel")).toBe(false);
-    expect(fs.existsSync(sentinel)).toBe(true);
-    fs.unlinkSync(sentinel);
-  });
+  test('deleteSave 拒绝穿越 id 且不动真实文件', () => {
+    const sentinel = path.join(tmpRoot, 'sentinel.json')
+    fs.writeFileSync(sentinel, '{}')
+    expect(storage.deleteSave('../sentinel')).toBe(false)
+    expect(fs.existsSync(sentinel)).toBe(true)
+    fs.unlinkSync(sentinel)
+  })
 
-  test("getConversation 拒绝穿越 id", () => {
-    expect(storage.getConversation("../../package")).toEqual([]);
-  });
-});
+  test('getConversation 拒绝穿越 id', () => {
+    expect(storage.getConversation('../../package')).toEqual([])
+  })
+})
 
-describe("updateSave 记忆裁剪（MAX_MEMORIES=20）", () => {
-  test("超过 20 条时按重要度保留", async () => {
-    const created = storage.createSave(makeSaveData("placeholder"));
+describe('updateSave 记忆裁剪（MAX_MEMORIES=20）', () => {
+  test('超过 20 条时按重要度保留', async () => {
+    const created = storage.createSave(makeSaveData('placeholder'))
     const memories = Array.from({ length: 30 }, (_, i) =>
-      makeMemory(`记忆${i}`, (i % 10) + 1),
-    );
-    memories[29].importance = 10; // 确保 high 的重要性最大
-    memories[0].importance = 1;
-    const updated = await storage.updateSave(created.id, { memories });
-    expect(updated?.memories.length).toBe(20);
+      makeMemory(`记忆${i}`, (i % 10) + 1)
+    )
+    memories[29].importance = 10 // 确保 high 的重要性最大
+    memories[0].importance = 1
+    const updated = await storage.updateSave(created.id, { memories })
+    expect(updated?.memories.length).toBe(20)
     // 重要性 10 的记忆必须保留
-    expect(updated?.memories.some((m) => m.content === "记忆29")).toBe(true);
+    expect(updated?.memories.some((m) => m.content === '记忆29')).toBe(true)
     // 重要性 1 的最旧记忆应被裁掉
-    expect(updated?.memories.some((m) => m.content === "记忆0")).toBe(false);
-  });
-});
+    expect(updated?.memories.some((m) => m.content === '记忆0')).toBe(false)
+  })
+})
 
-describe("会话读写", () => {
-  test("appendConversation → getConversation 往返", async () => {
-    const created = storage.createSave(makeSaveData("placeholder"));
+describe('会话读写', () => {
+  test('appendConversation → getConversation 往返', async () => {
+    const created = storage.createSave(makeSaveData('placeholder'))
     await storage.appendConversation(created.id, [
-      { role: "user", content: "你好", day: 1, chapter: "序章" },
-    ]);
-    const conv = storage.getConversation(created.id);
-    expect(conv).toHaveLength(1);
-    expect(conv[0].day).toBe(1);
-  });
+      { role: 'user', content: '你好', day: 1, chapter: '序章' }
+    ])
+    const conv = storage.getConversation(created.id)
+    expect(conv).toHaveLength(1)
+    expect(conv[0].day).toBe(1)
+  })
 
-  test("popLastTurn 移除最后一轮（C1 重新生成）", async () => {
-    const created = storage.createSave(makeSaveData("placeholder"));
+  test('popLastTurn 移除最后一轮（C1 重新生成）', async () => {
+    const created = storage.createSave(makeSaveData('placeholder'))
     await storage.appendConversation(created.id, [
-      { role: "user", content: "行动" },
-      { role: "assistant", content: "叙述" },
-    ]);
-    expect(await storage.popLastTurn(created.id)).toBe(true);
-    expect(storage.getConversation(created.id)).toEqual([]);
+      { role: 'user', content: '行动' },
+      { role: 'assistant', content: '叙述' }
+    ])
+    expect(await storage.popLastTurn(created.id)).toBe(true)
+    expect(storage.getConversation(created.id)).toEqual([])
     // 不足一轮时返回 false
     await storage.appendConversation(created.id, [
-      { role: "user", content: "只有一条" },
-    ]);
-    expect(await storage.popLastTurn(created.id)).toBe(false);
-  });
+      { role: 'user', content: '只有一条' }
+    ])
+    expect(await storage.popLastTurn(created.id)).toBe(false)
+  })
 
-  test("getConversation limit 只取最近 N 条且保持正序（#18）", async () => {
-    const created = storage.createSave(makeSaveData("placeholder"));
+  test('getConversation limit 只取最近 N 条且保持正序（#18）', async () => {
+    const created = storage.createSave(makeSaveData('placeholder'))
     await storage.appendConversation(created.id, [
-      { role: "user", content: "第1条" },
-      { role: "assistant", content: "第2条" },
-      { role: "user", content: "第3条" },
-      { role: "assistant", content: "第4条" },
-    ]);
-    expect(storage.countConversation(created.id)).toBe(4);
-    const recent = storage.getConversation(created.id, 2);
-    expect(recent.map((m) => m.content)).toEqual(["第3条", "第4条"]);
+      { role: 'user', content: '第1条' },
+      { role: 'assistant', content: '第2条' },
+      { role: 'user', content: '第3条' },
+      { role: 'assistant', content: '第4条' }
+    ])
+    expect(storage.countConversation(created.id)).toBe(4)
+    const recent = storage.getConversation(created.id, 2)
+    expect(recent.map((m) => m.content)).toEqual(['第3条', '第4条'])
     // limit 大于总数时返回全部
-    expect(storage.getConversation(created.id, 99)).toHaveLength(4);
-  });
+    expect(storage.getConversation(created.id, 99)).toHaveLength(4)
+  })
 
-  test("searchMemories 中文关键词命中早期剧情（RAG 阶段 2）", async () => {
-    const created = storage.createSave(makeSaveData("placeholder"));
+  test('searchMemories 中文关键词命中早期剧情（RAG 阶段 2）', async () => {
+    const created = storage.createSave(makeSaveData('placeholder'))
     const msgs = [
-      { role: "user" as const, content: "我在义诊摊前醒来" },
+      { role: 'user' as const, content: '我在义诊摊前醒来' },
       {
-        role: "assistant" as const,
+        role: 'assistant' as const,
         content: JSON.stringify({
-          type: "game_update",
-          narration: "莉娅正在整理药箱，她抬起头对我微笑。",
-          choices: [],
-        }),
+          type: 'game_update',
+          narration: '莉娅正在整理药箱，她抬起头对我微笑。',
+          choices: []
+        })
       },
-      { role: "user" as const, content: "前往公会" },
+      { role: 'user' as const, content: '前往公会' },
       {
-        role: "assistant" as const,
+        role: 'assistant' as const,
         content: JSON.stringify({
-          type: "game_update",
-          narration: "公会大厅里贴满了悬赏任务。",
-          choices: [],
-        }),
+          type: 'game_update',
+          narration: '公会大厅里贴满了悬赏任务。',
+          choices: []
+        })
       },
-      { role: "user" as const, content: "回旅店休息" },
+      { role: 'user' as const, content: '回旅店休息' },
       {
-        role: "assistant" as const,
+        role: 'assistant' as const,
         content: JSON.stringify({
-          type: "game_update",
-          narration: "夜色渐深，我回到了旅店。",
-          choices: [],
-        }),
-      },
-    ];
-    await storage.appendConversation(created.id, msgs);
+          type: 'game_update',
+          narration: '夜色渐深，我回到了旅店。',
+          choices: []
+        })
+      }
+    ]
+    await storage.appendConversation(created.id, msgs)
 
     // 命中含"莉娅"的早期叙述，且 assistant 的 JSON 不出现在结果里
-    const hits = storage.searchMemories(created.id, "莉娅", {
-      excludeRecent: 0,
-    });
-    expect(hits.length).toBeGreaterThanOrEqual(1);
-    expect(hits[0].content).toContain("莉娅");
-    expect(hits[0].content).not.toContain("game_update");
+    const hits = storage.searchMemories(created.id, '莉娅', {
+      excludeRecent: 0
+    })
+    expect(hits.length).toBeGreaterThanOrEqual(1)
+    expect(hits[0].content).toContain('莉娅')
+    expect(hits[0].content).not.toContain('game_update')
 
     // excludeRecent 排除窗口内的消息
-    const recentOnly = storage.searchMemories(created.id, "旅店", {
-      excludeRecent: 2,
-    });
-    expect(recentOnly).toEqual([]);
-  });
+    const recentOnly = storage.searchMemories(created.id, '旅店', {
+      excludeRecent: 2
+    })
+    expect(recentOnly).toEqual([])
+  })
 
-  test("popLastTurn 同步清理 FTS 索引、deleteSave 清空索引", async () => {
-    const created = storage.createSave(makeSaveData("placeholder"));
+  test('popLastTurn 同步清理 FTS 索引、deleteSave 清空索引', async () => {
+    const created = storage.createSave(makeSaveData('placeholder'))
     await storage.appendConversation(created.id, [
-      { role: "user", content: "关于星纹吊坠的对话" },
+      { role: 'user', content: '关于星纹吊坠的对话' },
       {
-        role: "assistant",
+        role: 'assistant',
         content: JSON.stringify({
-          type: "game_update",
-          narration: "我攥紧了吊坠，想起莉娅的话。",
-          choices: [],
-        }),
-      },
-    ]);
+          type: 'game_update',
+          narration: '我攥紧了吊坠，想起莉娅的话。',
+          choices: []
+        })
+      }
+    ])
     // 重新生成（pop 最后一轮）后，索引里不再能搜到被移除的内容
-    await storage.popLastTurn(created.id);
-    expect(storage.searchMemories(created.id, "吊坠", { excludeRecent: 0 })).toEqual([]);
+    await storage.popLastTurn(created.id)
+    expect(
+      storage.searchMemories(created.id, '吊坠', { excludeRecent: 0 })
+    ).toEqual([])
 
-    await storage.deleteSave(created.id);
-    expect(storage.searchMemories(created.id, "莉娅", { excludeRecent: 0 })).toEqual([]);
-  });
+    await storage.deleteSave(created.id)
+    expect(
+      storage.searchMemories(created.id, '莉娅', { excludeRecent: 0 })
+    ).toEqual([])
+  })
 
-  test("deleteSave 联动删除会话", async () => {
-    const created = storage.createSave(makeSaveData("placeholder"));
-    await storage.appendConversation(created.id, [{ role: "user", content: "x" }]);
-    expect(storage.deleteSave(created.id)).toBe(true);
-    expect(storage.getConversation(created.id)).toEqual([]);
-    expect(storage.getSave(created.id)).toBeNull();
-  });
-});
+  test('deleteSave 联动删除会话', async () => {
+    const created = storage.createSave(makeSaveData('placeholder'))
+    await storage.appendConversation(created.id, [
+      { role: 'user', content: 'x' }
+    ])
+    expect(storage.deleteSave(created.id)).toBe(true)
+    expect(storage.getConversation(created.id)).toEqual([])
+    expect(storage.getSave(created.id)).toBeNull()
+  })
+})
 
-describe("summarizeConversation（#34）", () => {
-  test("assistant 的原始 JSON 不污染摘要", () => {
+describe('summarizeConversation（#34）', () => {
+  test('assistant 的原始 JSON 不污染摘要', () => {
     const rawJson = JSON.stringify({
-      type: "game_update",
-      narration: "我在旧城区醒来，遇到了莉娅。",
-      choices: [{ id: "A", text: "起身" }],
-    });
+      type: 'game_update',
+      narration: '我在旧城区醒来，遇到了莉娅。',
+      choices: [{ id: 'A', text: '起身' }]
+    })
     const summary = storage.summarizeConversation(
       [
-        { role: "user", content: "睁开眼睛" },
-        { role: "assistant", content: rawJson },
+        { role: 'user', content: '睁开眼睛' },
+        { role: 'assistant', content: rawJson }
       ],
-      "",
-    );
-    expect(summary).toContain("我在旧城区醒来");
-    expect(summary).not.toContain('"type"');
-    expect(summary).not.toContain("game_update");
-  });
+      ''
+    )
+    expect(summary).toContain('我在旧城区醒来')
+    expect(summary).not.toContain('"type"')
+    expect(summary).not.toContain('game_update')
+  })
 
-  test("长叙述被截断到 120 字符", () => {
-    const long = "长".repeat(300);
+  test('长叙述被截断到 120 字符', () => {
+    const long = '长'.repeat(300)
     const summary = storage.summarizeConversation(
-      [{ role: "assistant", content: long }],
-      "",
-    );
-    expect(summary.length).toBeLessThanOrEqual("旁白: ".length + 123);
-  });
-});
+      [{ role: 'assistant', content: long }],
+      ''
+    )
+    expect(summary.length).toBeLessThanOrEqual('旁白: '.length + 123)
+  })
+})

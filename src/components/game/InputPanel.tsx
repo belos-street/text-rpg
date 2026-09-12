@@ -1,11 +1,11 @@
-"use client"
+'use client'
 
-import type React from "react"
+import type React from 'react'
 
-import { useState, useRef } from "react"
-import { Send, Square } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { useState, useRef } from 'react'
+import { Send, Square } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 
 interface InputPanelProps {
   onSend: (message: string) => void
@@ -15,15 +15,21 @@ interface InputPanelProps {
   placeholder?: string
 }
 
-export function InputPanel({ onSend, onStop, isStreaming, disabled, placeholder }: InputPanelProps) {
-  const [input, setInput] = useState("")
+export function InputPanel({
+  onSend,
+  onStop,
+  isStreaming,
+  disabled,
+  placeholder
+}: InputPanelProps) {
+  const [input, setInput] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (input.trim() && !isStreaming) {
       onSend(input.trim())
-      setInput("")
+      setInput('')
     }
   }
 
@@ -35,7 +41,7 @@ export function InputPanel({ onSend, onStop, isStreaming, disabled, placeholder 
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder={placeholder || "输入你的行动……也可以自由输入任何内容"}
+          placeholder={placeholder || '输入你的行动……也可以自由输入任何内容'}
           disabled={disabled || isStreaming}
           className="flex-1 h-10 border-zinc-700 bg-zinc-900/50 text-zinc-100 placeholder:text-zinc-500 focus-visible:ring-primary/50 focus-visible:border-primary/50"
         />
@@ -45,8 +51,7 @@ export function InputPanel({ onSend, onStop, isStreaming, disabled, placeholder 
             variant="destructive"
             size="icon"
             onClick={onStop}
-            className="shrink-0"
-          >
+            className="shrink-0">
             <Square className="size-4 fill-current" />
           </Button>
         ) : (
@@ -55,8 +60,7 @@ export function InputPanel({ onSend, onStop, isStreaming, disabled, placeholder 
             variant="default"
             size="icon"
             disabled={!input.trim() || disabled}
-            className="shrink-0"
-          >
+            className="shrink-0">
             <Send className="size-4" />
           </Button>
         )}

@@ -1,9 +1,9 @@
-import { loadStoryConfig } from "@/lib/game-data";
+import { loadStoryConfig } from '@/lib/game-data'
 
-export const runtime = "nodejs";
+export const runtime = 'nodejs'
 
 export async function GET() {
-  const config = loadStoryConfig();
+  const config = loadStoryConfig()
   const clientConfig = {
     title: config.title,
     subtitle: config.subtitle,
@@ -13,7 +13,7 @@ export async function GET() {
     characterEmoji: config.characterEmoji,
     affectionStages: config.affectionStages.map((s) => ({
       max: s.max,
-      label: s.label,
+      label: s.label
     })),
     initialState: {
       hp: config.initialState.hp,
@@ -24,8 +24,8 @@ export async function GET() {
       location: config.initialState.location,
       chapter: config.initialState.chapter,
       day: config.initialState.day,
-      time: config.initialState.time,
-    },
-  };
-  return Response.json(clientConfig);
+      time: config.initialState.time
+    }
+  }
+  return Response.json(clientConfig)
 }

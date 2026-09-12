@@ -20,7 +20,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
+  DialogDescription
 } from '@/components/ui/dialog'
 import type {
   PlayerState,
@@ -31,7 +31,7 @@ import type {
   MemoryItem,
   SaveMeta,
   SaveData,
-  AffectionStage,
+  AffectionStage
 } from '@/types'
 
 const DEFAULT_PLAYER_STATE: PlayerState = {
@@ -44,14 +44,15 @@ const DEFAULT_PLAYER_STATE: PlayerState = {
   location: '',
   chapter: '',
   day: 1,
-  time: '',
+  time: ''
 }
 
 export default function GamePage() {
   const [gameStarted, setGameStarted] = useState(false)
   const [nameInput, setNameInput] = useState('')
   const [saveId, setSaveId] = useState<string | null>(null)
-  const [playerState, setPlayerState] = useState<PlayerState>(DEFAULT_PLAYER_STATE)
+  const [playerState, setPlayerState] =
+    useState<PlayerState>(DEFAULT_PLAYER_STATE)
   const [messages, setMessages] = useState<Message[]>([])
   const playerStateRef = useRef(playerState)
   const messagesRef = useRef(messages)
@@ -74,27 +75,32 @@ export default function GamePage() {
   const [saves, setSaves] = useState<SaveMeta[]>([])
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
   const [savesLoading, setSavesLoading] = useState(true)
-  const [characterEmoji, setCharacterEmoji] = useState<Record<string, string>>({})
+  const [characterEmoji, setCharacterEmoji] = useState<Record<string, string>>(
+    {}
+  )
   const [affectionStages, setAffectionStages] = useState<AffectionStage[]>([])
   const [affectionToast, setAffectionToast] = useState<string | null>(null)
   const [endingCount, setEndingCount] = useState<number | null>(null)
   // D4 调试面板：仅当 URL 带 ?debug=1 时启用
-  const [debugEnabled] = useState(() =>
-    typeof window !== 'undefined' &&
-    new URLSearchParams(window.location.search).has('debug'),
+  const [debugEnabled] = useState(
+    () =>
+      typeof window !== 'undefined' &&
+      new URLSearchParams(window.location.search).has('debug')
   )
-  const [debugData, setDebugData] = useState<Record<string, unknown> | null>(null)
+  const [debugData, setDebugData] = useState<Record<string, unknown> | null>(
+    null
+  )
   const [storyConfig, setStoryConfig] = useState({
     title: '加载中',
     subtitle: '',
     loadingText: '加载中……',
     emptyChatTitle: '加载中',
-    emptyChatSubtitle: '',
+    emptyChatSubtitle: ''
   })
 
   const displayMessages = useMemo(
     () => messages.filter((m) => m.role !== 'system'),
-    [messages],
+    [messages]
   )
 
   const streamCallbacks = useRef({
@@ -115,7 +121,7 @@ export default function GamePage() {
     onNewMemory: (mem: Omit<MemoryItem, 'id' | 'createdAt'>) => {
       setMemories((prev) => {
         const exists = prev.some(
-          (m) => m.type === mem.type && m.content === mem.content,
+          (m) => m.type === mem.type && m.content === mem.content
         )
         if (exists) return prev
         return [
@@ -128,8 +134,9 @@ export default function GamePage() {
             createdAt: new Date().toISOString(),
             day: playerStateRef.current.day,
             chapter: playerStateRef.current.chapter,
-            messageIndex: messagesRef.current.filter((m) => m.role !== 'system').length,
-          },
+            messageIndex: messagesRef.current.filter((m) => m.role !== 'system')
+              .length
+          }
         ]
       })
     },
@@ -141,13 +148,19 @@ export default function GamePage() {
         }
         return {
           ...prev,
-          hp: changes.hp != null ? Math.max(0, Math.min(prev.maxHp, changes.hp)) : prev.hp,
-          mp: changes.mp != null ? Math.max(0, Math.min(prev.maxMp, changes.mp)) : prev.mp,
+          hp:
+            changes.hp != null
+              ? Math.max(0, Math.min(prev.maxHp, changes.hp))
+              : prev.hp,
+          mp:
+            changes.mp != null
+              ? Math.max(0, Math.min(prev.maxMp, changes.mp))
+              : prev.mp,
           gold: changes.gold != null ? Math.max(0, changes.gold) : prev.gold,
           location: changes.location ?? prev.location,
           chapter: changes.chapter ?? prev.chapter,
           day: newDay,
-          time: changes.time ?? prev.time,
+          time: changes.time ?? prev.time
         }
       })
     },
@@ -156,11 +169,18 @@ export default function GamePage() {
         prev.map((r) => {
           const change = changes[r.characterId]
           if (change) {
-            const newAffection = Math.max(0, Math.min(100, r.affection + change))
-            return { ...r, affection: newAffection, stage: getAffectionStage(newAffection) }
+            const newAffection = Math.max(
+              0,
+              Math.min(100, r.affection + change)
+            )
+            return {
+              ...r,
+              affection: newAffection,
+              stage: getAffectionStage(newAffection)
+            }
           }
           return r
-        }),
+        })
       )
     },
     onAffectionReason: (reason: string) => {
@@ -176,7 +196,10 @@ export default function GamePage() {
         for (const item of items) {
           const idx = updated.findIndex((i) => i.itemId === item.id)
           if (idx !== -1) {
-            updated[idx] = { ...updated[idx], quantity: updated[idx].quantity + 1 }
+            updated[idx] = {
+              ...updated[idx],
+              quantity: updated[idx].quantity + 1
+            }
           } else {
             updated.push({ itemId: item.id, itemName: item.name, quantity: 1 })
           }
@@ -185,10 +208,24 @@ export default function GamePage() {
       })
     },
     onMessage: (msg: Message) => {
-      setMessages((prev) => [...prev, { ...msg, day: playerStateRef.current.day, chapter: playerStateRef.current.chapter }])
+      setMessages((prev) => [
+        ...prev,
+        {
+          ...msg,
+          day: playerStateRef.current.day,
+          chapter: playerStateRef.current.chapter
+        }
+      ])
     },
     onError: (msg: Message) => {
-      setMessages((prev) => [...prev, { ...msg, day: playerStateRef.current.day, chapter: playerStateRef.current.chapter }])
+      setMessages((prev) => [
+        ...prev,
+        {
+          ...msg,
+          day: playerStateRef.current.day,
+          chapter: playerStateRef.current.chapter
+        }
+      ])
     },
     onDebug: (payload: Record<string, unknown>) => {
       setDebugData(payload)
@@ -197,7 +234,7 @@ export default function GamePage() {
       setIsStreaming(false)
       setIsLoading(false)
       setCurrentStreamContent('')
-    },
+    }
   })
 
   const { sendMessage, stop } = useStreamChat(streamCallbacks.current)
@@ -220,7 +257,7 @@ export default function GamePage() {
           subtitle: cfg.subtitle || '',
           loadingText: cfg.loadingText || '加载中……',
           emptyChatTitle: cfg.emptyChatTitle || '欢迎',
-          emptyChatSubtitle: cfg.emptyChatSubtitle || '',
+          emptyChatSubtitle: cfg.emptyChatSubtitle || ''
         })
         if (cfg.initialState && !gameStartedRef.current) {
           // 防竞态：读档/开局后 config 才 resolve 时，不用初始值覆盖存档状态
@@ -229,7 +266,11 @@ export default function GamePage() {
       })
       .catch((error) => {
         console.error('[config] 故事配置加载失败:', error)
-        setStoryConfig((prev) => ({ ...prev, title: '配置加载失败', loadingText: '加载失败，请刷新重试' }))
+        setStoryConfig((prev) => ({
+          ...prev,
+          title: '配置加载失败',
+          loadingText: '加载失败，请刷新重试'
+        }))
       })
 
     const params = new URLSearchParams(window.location.search)
@@ -288,7 +329,7 @@ export default function GamePage() {
       location: save.location,
       chapter: save.chapter,
       day: save.day,
-      time: save.time,
+      time: save.time
     })
     setRelations(save.relations || [])
     setInventory(save.inventory || [])
@@ -309,22 +350,39 @@ export default function GamePage() {
       .filter((m: Message) => m.role !== 'system')
       .map((m: Message) => ({
         ...m,
-        content: m.role === 'assistant' ? extractNarration(m.content) : m.content,
+        content:
+          m.role === 'assistant' ? extractNarration(m.content) : m.content,
         day: m.day ?? saveDay,
-        chapter: m.chapter ?? saveChapter,
+        chapter: m.chapter ?? saveChapter
       }))
     setMessages(displayHistory)
-    setMemories((prev) => prev.map((mem) => {
-      if (mem.messageIndex != null) return mem
-      const idx = displayHistory.findIndex(
-        (m: Message) => m.role === 'assistant' && mem.content.length > 10 && m.content.includes(mem.content),
-      )
-      if (idx !== -1) {
-        return { ...mem, messageIndex: idx, day: displayHistory[idx].day, chapter: displayHistory[idx].chapter }
-      }
-      return { ...mem, day: mem.day ?? saveDay, chapter: mem.chapter ?? saveChapter }
-    }))
-    const lastAssistant = [...data.history].reverse().find((m: Message) => m.role === 'assistant')
+    setMemories((prev) =>
+      prev.map((mem) => {
+        if (mem.messageIndex != null) return mem
+        const idx = displayHistory.findIndex(
+          (m: Message) =>
+            m.role === 'assistant' &&
+            mem.content.length > 10 &&
+            m.content.includes(mem.content)
+        )
+        if (idx !== -1) {
+          return {
+            ...mem,
+            messageIndex: idx,
+            day: displayHistory[idx].day,
+            chapter: displayHistory[idx].chapter
+          }
+        }
+        return {
+          ...mem,
+          day: mem.day ?? saveDay,
+          chapter: mem.chapter ?? saveChapter
+        }
+      })
+    )
+    const lastAssistant = [...data.history]
+      .reverse()
+      .find((m: Message) => m.role === 'assistant')
     if (lastAssistant) {
       const restored = extractChoices(lastAssistant.content)
       if (restored.length > 0) setChoices(restored)
@@ -344,7 +402,7 @@ export default function GamePage() {
       const res = await fetch('/api/saves', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ playerName: name }),
+        body: JSON.stringify({ playerName: name })
       })
       const data = await res.json()
       if (!res.ok || !data.save) {
@@ -366,7 +424,7 @@ export default function GamePage() {
         location: data.save.location,
         chapter: data.save.chapter,
         day: data.save.day,
-        time: data.save.time,
+        time: data.save.time
       }))
       sendMessage(data.save.id, '', name)
     } catch (err) {
@@ -376,8 +434,8 @@ export default function GamePage() {
         {
           role: 'assistant',
           content: `创建存档失败：${reason}\n\n请检查服务端日志后重新开始游戏。`,
-          day: 1,
-        },
+          day: 1
+        }
       ])
     }
   }, [nameInput, gameStarted, sendMessage])
@@ -432,16 +490,21 @@ export default function GamePage() {
         `- 地点：${data.save.location}`,
         '',
         '---',
-        '',
+        ''
       ]
       for (const m of data.history as Message[]) {
         if (m.role === 'user') {
           lines.push(`> 🧑 **${m.content}**`, '')
         } else {
-          lines.push(m.content.startsWith('{') ? extractNarration(m.content) : m.content, '')
+          lines.push(
+            m.content.startsWith('{') ? extractNarration(m.content) : m.content,
+            ''
+          )
         }
       }
-      const blob = new Blob([lines.join('\n')], { type: 'text/markdown;charset=utf-8' })
+      const blob = new Blob([lines.join('\n')], {
+        type: 'text/markdown;charset=utf-8'
+      })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
@@ -458,21 +521,44 @@ export default function GamePage() {
       if (!saveId || isStreaming) return
       const choice = choices.find((c) => c.id === choiceId)
       if (!choice) return
-      setMessages((prev) => [...prev, { role: 'user', content: choice.text, day: playerState.day, chapter: playerState.chapter }])
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'user',
+          content: choice.text,
+          day: playerState.day,
+          chapter: playerState.chapter
+        }
+      ])
       setChoices([])
       sendMessage(saveId, choice.text)
     },
-    [saveId, isStreaming, choices, sendMessage, playerState.day, playerState.chapter],
+    [
+      saveId,
+      isStreaming,
+      choices,
+      sendMessage,
+      playerState.day,
+      playerState.chapter
+    ]
   )
 
   const handleSendMessage = useCallback(
     (msg: string) => {
       if (!saveId || isStreaming) return
-      setMessages((prev) => [...prev, { role: 'user', content: msg, day: playerState.day, chapter: playerState.chapter }])
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'user',
+          content: msg,
+          day: playerState.day,
+          chapter: playerState.chapter
+        }
+      ])
       setChoices([])
       sendMessage(saveId, msg)
     },
-    [saveId, isStreaming, sendMessage, playerState.day, playerState.chapter],
+    [saveId, isStreaming, sendMessage, playerState.day, playerState.chapter]
   )
 
   const handleStop = useCallback(() => {
@@ -512,8 +598,7 @@ export default function GamePage() {
             variant="ghost"
             size="icon"
             className="h-8 w-8 text-zinc-500"
-            onClick={() => setShowSidebar(!showSidebar)}
-          >
+            onClick={() => setShowSidebar(!showSidebar)}>
             <Menu className="size-4" />
           </Button>
           <h1 className="text-sm font-medium text-zinc-300 hidden sm:block">
@@ -526,8 +611,7 @@ export default function GamePage() {
             size="sm"
             className="h-8 text-xs text-zinc-500"
             onClick={handleRegenerate}
-            disabled={isStreaming || messages.length === 0}
-          >
+            disabled={isStreaming || messages.length === 0}>
             <RefreshCw className="size-3.5 mr-1" />
             重新生成
           </Button>
@@ -535,8 +619,7 @@ export default function GamePage() {
             variant="ghost"
             size="sm"
             className="h-8 text-xs text-zinc-500"
-            onClick={handleExport}
-          >
+            onClick={handleExport}>
             <Download className="size-3.5 mr-1" />
             导出
           </Button>
@@ -544,8 +627,7 @@ export default function GamePage() {
             variant="ghost"
             size="sm"
             className="h-8 text-xs text-zinc-500"
-            onClick={() => setShowSaveDialog(true)}
-          >
+            onClick={() => setShowSaveDialog(true)}>
             <Save className="size-3.5 mr-1" />
             存档
           </Button>
@@ -586,9 +668,18 @@ export default function GamePage() {
                 <div className="flex justify-center py-3">
                   <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-zinc-800/50 text-xs text-zinc-500">
                     <span className="inline-flex gap-1">
-                      <span className="size-1.5 rounded-full bg-zinc-400 animate-dot-bounce" style={{ animationDelay: '0ms' }} />
-                      <span className="size-1.5 rounded-full bg-zinc-400 animate-dot-bounce" style={{ animationDelay: '200ms' }} />
-                      <span className="size-1.5 rounded-full bg-zinc-400 animate-dot-bounce" style={{ animationDelay: '400ms' }} />
+                      <span
+                        className="size-1.5 rounded-full bg-zinc-400 animate-dot-bounce"
+                        style={{ animationDelay: '0ms' }}
+                      />
+                      <span
+                        className="size-1.5 rounded-full bg-zinc-400 animate-dot-bounce"
+                        style={{ animationDelay: '200ms' }}
+                      />
+                      <span
+                        className="size-1.5 rounded-full bg-zinc-400 animate-dot-bounce"
+                        style={{ animationDelay: '400ms' }}
+                      />
                     </span>
                     思考中
                   </span>
@@ -622,7 +713,7 @@ export default function GamePage() {
               const res = await fetch('/api/gift', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ saveId, itemId, characterId }),
+                body: JSON.stringify({ saveId, itemId, characterId })
               })
               const data = await res.json()
               if (!res.ok || !data.success) {
@@ -632,9 +723,16 @@ export default function GamePage() {
               setRelations(data.relations)
               setMessages((prev) => [
                 ...prev,
-                { role: 'assistant', content: data.giftMessage, day: playerStateRef.current.day, chapter: playerStateRef.current.chapter },
+                {
+                  role: 'assistant',
+                  content: data.giftMessage,
+                  day: playerStateRef.current.day,
+                  chapter: playerStateRef.current.chapter
+                }
               ])
-              setAffectionToast(`🎁 ${data.giftMessage}（好感 +${data.affectionChange}）`)
+              setAffectionToast(
+                `🎁 ${data.giftMessage}（好感 +${data.affectionChange}）`
+              )
             } catch (error) {
               console.error('[gift] 赠送失败:', error)
             }
@@ -647,7 +745,10 @@ export default function GamePage() {
             const el = document.querySelector(`[data-msg-index="${idx}"]`)
             el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
             el?.classList.add('ring-2', 'ring-primary/50')
-            setTimeout(() => el?.classList.remove('ring-2', 'ring-primary/50'), 2000)
+            setTimeout(
+              () => el?.classList.remove('ring-2', 'ring-primary/50'),
+              2000
+            )
           }}
         />
       </div>

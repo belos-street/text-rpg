@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from 'zod'
 
 /**
  * LLM 输出的 game_update 校验层。
@@ -10,84 +10,90 @@ import { z } from "zod";
 const coerceString = (fallback: string) =>
   z.preprocess(
     (v) => (v === undefined || v === null ? fallback : v),
-    z.coerce.string().catch(fallback),
-  );
+    z.coerce.string().catch(fallback)
+  )
 
 const choiceSchema = z.object({
-  id: coerceString(""),
-  text: coerceString(""),
-});
+  id: coerceString(''),
+  text: coerceString('')
+})
 
 const stateChangesSchema = z
   .object({
     hp: z.coerce.number().optional().catch(undefined),
     mp: z.coerce.number().optional().catch(undefined),
     gold: z.coerce.number().optional().catch(undefined),
-    location: coerceString("").optional().catch(undefined),
-    chapter: coerceString("").optional().catch(undefined),
+    location: coerceString('').optional().catch(undefined),
+    chapter: coerceString('').optional().catch(undefined),
     day: z.coerce.number().optional().catch(undefined),
-    time: coerceString("").optional().catch(undefined),
+    time: coerceString('').optional().catch(undefined)
   })
   .optional()
-  .catch(undefined);
+  .catch(undefined)
 
 const memoryTypeSchema = z
-  .enum(["event", "decision", "item", "relationship"])
-  .catch("event");
+  .enum(['event', 'decision', 'item', 'relationship'])
+  .catch('event')
 
 export const gameUpdateSchema = z.object({
   type: z.string().optional(),
-  narration: coerceString(""),
+  narration: coerceString(''),
   choices: z.array(choiceSchema).max(8).catch([]),
   stateChanges: stateChangesSchema,
   affectionChanges: z
     .record(z.string(), z.coerce.number())
     .optional()
     .catch(undefined),
-  affectionReason: coerceString("").optional().catch(undefined),
+  affectionReason: coerceString('').optional().catch(undefined),
   flagsChanges: z
-    .record(z.string(), z.union([z.boolean(), z.coerce.number(), z.coerce.string()]))
+    .record(
+      z.string(),
+      z.union([z.boolean(), z.coerce.number(), z.coerce.string()])
+    )
     .optional()
     .catch(undefined),
   harmonyChange: z.coerce.number().optional().catch(undefined),
   newMemory: z
     .object({
       type: memoryTypeSchema,
-      content: coerceString(""),
-      importance: z.coerce.number().min(1).max(10).catch(5),
+      content: coerceString(''),
+      importance: z.coerce.number().min(1).max(10).catch(5)
     })
     .optional()
     .catch(undefined),
   newItems: z
     .array(
       z.object({
-        id: coerceString(""),
-        name: coerceString(""),
-      }),
+        id: coerceString(''),
+        name: coerceString('')
+      })
     )
     .optional()
     .catch(undefined),
   scene: z
     .object({
-      mood: coerceString(""),
-      weather: coerceString(""),
-      time: coerceString(""),
+      mood: coerceString(''),
+      weather: coerceString(''),
+      time: coerceString('')
     })
     .optional()
     .catch(undefined),
   ending: z
     .preprocess(
-      (v) => (v === undefined || v === null ? "" : v),
+      (v) => (v === undefined || v === null ? '' : v),
       z.coerce
         .string()
-        .refine((v) => !/^(none|null|undefined|无|无结局|-)$/i.test(v), "非结局")
-        .catch(""),
+        .refine(
+          (v) => !/^(none|null|undefined|无|无结局|-)$/i.test(v),
+          '非结局'
+        )
+        .catch('')
     )
     .optional()
-    .catch(undefined),
-});
+    .catch(undefined)
+})
 
-export type ParsedGameUpdate = z.infer<typeof gameUpdateSchema>;
+export type ParsedGameUpdate = z.infer<typeof gameUpdateSchema>
 
 // ---------- API 请求体校验（No.14 + #24） ----------
 
@@ -98,9 +104,9 @@ export const chatRequestSchema = z.object({
   /** C1 重新生成：移除最后一轮对话后重掷叙述与选项 */
   regenerate: z.boolean().optional(),
   /** D4 调试面板：附带请求提示词/原始输出等诊断信息 */
-  debug: z.boolean().optional(),
-});
+  debug: z.boolean().optional()
+})
 
 export const createSaveRequestSchema = z.object({
-  playerName: z.string().min(1).max(20),
-});
+  playerName: z.string().min(1).max(20)
+})

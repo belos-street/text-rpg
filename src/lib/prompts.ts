@@ -2,87 +2,91 @@ import {
   chapterKeyOf,
   loadEssentialGameData,
   loadMainQuestForChapter,
-  loadStoryConfig,
-} from "./game-data";
-import { extractNarration } from "./parser";
-import type { SaveData } from "@/types";
+  loadStoryConfig
+} from './game-data'
+import { extractNarration } from './parser'
+import type { SaveData } from '@/types'
 
 export function loadGameContext(save: SaveData): string {
   const recentMemories = [...save.memories]
     .sort(
       (a, b) =>
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     )
     .slice(0, 15)
     .map(
       (m) =>
-        `[${m.type === "event" ? "事件" : m.type === "decision" ? "抉择" : m.type === "item" ? "道具" : "关系"}][重要度${m.importance}] ${m.content}`,
+        `[${m.type === 'event' ? '事件' : m.type === 'decision' ? '抉择' : m.type === 'item' ? '道具' : '关系'}][重要度${m.importance}] ${m.content}`
     )
-    .join("\n");
+    .join('\n')
 
   const relations = save.relations
     .map(
       (r) =>
-        `- ${r.characterName}（ID: ${r.characterId}）：好感度 ${r.affection}（${r.stage}）`,
+        `- ${r.characterName}（ID: ${r.characterId}）：好感度 ${r.affection}（${r.stage}）`
     )
-    .join("\n");
+    .join('\n')
 
   const inventory = save.inventory
     .map((i) => `${i.itemName} x${i.quantity}`)
-    .join(", ");
+    .join(', ')
 
-  const config = loadStoryConfig();
-  const chapters = config.chapters ?? [];
+  const config = loadStoryConfig()
+  const chapters = config.chapters ?? []
   const activeFlags = Object.entries(save.flags ?? {})
     .filter(([, v]) => v)
-    .map(([k]) => k);
+    .map(([k]) => k)
 
   return [
     `【当前存档摘要】${save.summary}`,
-    "",
+    '',
     `【玩家状态】玩家:${save.playerName} HP:${save.hp}/${save.maxHp} MP:${save.mp}/${save.maxMp} 金币:${save.gold}`,
     `【当前位置】${save.location} | 第${save.day}天 | ${save.time}`,
     `【当前章节】${save.chapter}`,
     ...(save.scene
-      ? [`【场景氛围】${save.scene.mood} · ${save.scene.weather} · ${save.scene.time}`]
+      ? [
+          `【场景氛围】${save.scene.mood} · ${save.scene.weather} · ${save.scene.time}`
+        ]
       : []),
     ...(chapters.length > 0
-      ? [`【章节列表】${chapters.join("、")}（stateChanges.chapter 只能从列表中选择）`]
+      ? [
+          `【章节列表】${chapters.join('、')}（stateChanges.chapter 只能从列表中选择）`
+        ]
       : []),
     ...(activeFlags.length > 0
-      ? [`【剧情标记】${activeFlags.join("、")}`]
+      ? [`【剧情标记】${activeFlags.join('、')}`]
       : []),
-    "",
+    '',
     `【好感度】${save.harmony}/100`,
-    "",
-    "【角色关系】",
+    '',
+    '【角色关系】',
     relations,
-    "",
-    `【背包】${inventory || "空"}`,
-    "",
-    "【近期记忆】",
-    recentMemories || "暂无重要记忆",
-  ].join("\n");
+    '',
+    `【背包】${inventory || '空'}`,
+    '',
+    '【近期记忆】',
+    recentMemories || '暂无重要记忆'
+  ].join('\n')
 }
 
 // 静态系统提示词：不含任何易变的存档状态，保证跨回合字节稳定，
 // 让 LM Studio 的前缀 KV cache 能命中（易变状态见 buildMessages 末尾的状态块）
 function buildSystemPrompt(chapterKey: string | null): string {
-  const config = loadStoryConfig();
+  const config = loadStoryConfig()
   // M1/M2：女主档案按当前章节筛选，主线大纲只注入当前章节概要
   const gameRules = [
     loadEssentialGameData(chapterKey),
-    "===== 主线剧情（总纲 + 当前章节概要 + 推进原则）=====",
-    loadMainQuestForChapter(chapterKey),
-  ].join("\n\n");
+    '===== 主线剧情（总纲 + 当前章节概要 + 推进原则）=====',
+    loadMainQuestForChapter(chapterKey)
+  ].join('\n\n')
 
   const characterEmojiLines = Object.entries(config.characterEmoji)
     .map(([name, emoji]) => `- ${name} → ${emoji}`)
-    .join("\n");
+    .join('\n')
 
   const flagsLines = Object.entries(config.flags ?? {})
     .map(([id, desc]) => `- ${id}：${desc}`)
-    .join("\n");
+    .join('\n')
 
   return `你是「${config.title}」的文字冒险游戏AI主持人（GM）。你的任务是驱动剧情、扮演所有角色、描述场景，并根据玩家的选择推进故事。
 
@@ -100,10 +104,10 @@ ${gameRules}
 如果没有明确角色归属的旁白性对话，直接用「对话内容」即可。
 
 ## 角色与 emoji 对应关系
-${characterEmojiLines || "- 无预设角色"}
+${characterEmojiLines || '- 无预设角色'}
 
 ## 可用剧情标记（flagsChanges）
-${flagsLines || "-（本故事未定义）"}
+${flagsLines || '-（本故事未定义）'}
 当某项剧情节点达成时，在 flagsChanges 中把对应标记设为 true。只设置本次发生变化的标记。
 
 ## 输出格式
@@ -155,33 +159,37 @@ ${flagsLines || "-（本故事未定义）"}
 游戏叙事规则（叙事原则/数值判定/好感度原则/剧情与选项等）见上方注入的《全局游戏规则》，必须严格遵守。
 
 最新一封玩家消息会附带【当前游戏状态】块，请以其为准做出反应。章节推进必须遵守其中的【章节列表】。
-`;
+`
 }
 
 export function buildMessages(
   save: SaveData | null,
   userInput: string,
   dialogueHistory: { role: string; content: string }[],
-  relatedMemories?: { day: number | null; chapter: string | null; content: string }[],
-): { role: "system" | "user" | "assistant"; content: string }[] {
-  const isFirstMessage = !save || dialogueHistory.length === 0;
-  const chapterKey = chapterKeyOf(save?.chapter);
+  relatedMemories?: {
+    day: number | null
+    chapter: string | null
+    content: string
+  }[]
+): { role: 'system' | 'user' | 'assistant'; content: string }[] {
+  const isFirstMessage = !save || dialogueHistory.length === 0
+  const chapterKey = chapterKeyOf(save?.chapter)
 
-  const messages: { role: "system" | "user" | "assistant"; content: string }[] =
-    [{ role: "system", content: buildSystemPrompt(chapterKey) }];
+  const messages: { role: 'system' | 'user' | 'assistant'; content: string }[] =
+    [{ role: 'system', content: buildSystemPrompt(chapterKey) }]
 
   if (save && dialogueHistory.length > 0) {
     // 只保留最近 10 条；assistant 历史压缩为纯叙述（原文仍在 conversations 文件里）
-    const recentHistory = dialogueHistory.slice(-10);
+    const recentHistory = dialogueHistory.slice(-10)
     for (const msg of recentHistory) {
-      if (msg.role === "user" || msg.role === "assistant") {
+      if (msg.role === 'user' || msg.role === 'assistant') {
         messages.push({
-          role: msg.role as "user" | "assistant",
+          role: msg.role as 'user' | 'assistant',
           content:
-            msg.role === "assistant"
+            msg.role === 'assistant'
               ? extractNarration(msg.content)
-              : msg.content,
-        });
+              : msg.content
+        })
       }
     }
   }
@@ -194,35 +202,35 @@ export function buildMessages(
       ? `【相关回忆】（更早剧情中与本次行动相关的片段，仅供衔接参考）\n${relatedMemories
           .map(
             (m) =>
-              `- （第${m.day ?? "?"}天${m.chapter ? `·${m.chapter}` : ""}）${
+              `- （第${m.day ?? '?'}天${m.chapter ? `·${m.chapter}` : ''}）${
                 m.content.length > 150
-                  ? m.content.slice(0, 150) + "…"
+                  ? m.content.slice(0, 150) + '…'
                   : m.content
-              }`,
+              }`
           )
-          .join("\n")}\n\n`
-      : "";
+          .join('\n')}\n\n`
+      : ''
 
   const stateBlock = save
     ? `${recallBlock}【当前游戏状态】\n${loadGameContext(save)}\n\n`
-    : "";
+    : ''
 
   if (userInput) {
     messages.push({
-      role: "user",
-      content: `${stateBlock}【玩家行动】\n${userInput}`,
-    });
+      role: 'user',
+      content: `${stateBlock}【玩家行动】\n${userInput}`
+    })
   } else if (isFirstMessage) {
     messages.push({
-      role: "user",
-      content: `${stateBlock}请开始游戏序章，描述主角醒来时的场景。`,
-    });
+      role: 'user',
+      content: `${stateBlock}请开始游戏序章，描述主角醒来时的场景。`
+    })
   } else {
     messages.push({
-      role: "user",
-      content: `${stateBlock}请继续推进剧情。`,
-    });
+      role: 'user',
+      content: `${stateBlock}请继续推进剧情。`
+    })
   }
 
-  return messages;
+  return messages
 }

@@ -1,9 +1,15 @@
-"use client"
+'use client'
 
-import { useMemo } from "react"
+import { useMemo } from 'react'
 
 interface Segment {
-  type: "narration" | "dialogue" | "thought" | "emphasis" | "action" | "character_dialogue"
+  type:
+    | 'narration'
+    | 'dialogue'
+    | 'thought'
+    | 'emphasis'
+    | 'action'
+    | 'character_dialogue'
   text: string
   full: string
   characterName?: string
@@ -13,18 +19,18 @@ function parseNarrative(text: string): Segment[] {
   const segments: Segment[] = []
   let remaining = text
 
-  const patterns: { regex: RegExp; type: Segment["type"] }[] = [
-    { regex: /【([^】]+)】「([^」]*)」/g, type: "character_dialogue" },
-    { regex: /「([^」]*)」/g, type: "dialogue" },
-    { regex: /『([^』]*)』/g, type: "thought" },
-    { regex: /【([^】]+)】/g, type: "emphasis" },
-    { regex: /（([^）]*)）/g, type: "action" },
+  const patterns: { regex: RegExp; type: Segment['type'] }[] = [
+    { regex: /【([^】]+)】「([^」]*)」/g, type: 'character_dialogue' },
+    { regex: /「([^」]*)」/g, type: 'dialogue' },
+    { regex: /『([^』]*)』/g, type: 'thought' },
+    { regex: /【([^】]+)】/g, type: 'emphasis' },
+    { regex: /（([^）]*)）/g, type: 'action' }
   ]
 
   while (remaining.length > 0) {
     let earliestIndex = remaining.length
     let earliestMatch: RegExpExecArray | null = null
-    let earliestType: Segment["type"] = "narration"
+    let earliestType: Segment['type'] = 'narration'
     let earliestLen = 0
     let earliestCharName: string | undefined
 
@@ -36,7 +42,7 @@ function parseNarrative(text: string): Segment[] {
         earliestMatch = match
         earliestType = type
         earliestLen = match[0].length
-        if (type === "character_dialogue") {
+        if (type === 'character_dialogue') {
           earliestCharName = match[1]
         }
       }
@@ -45,44 +51,44 @@ function parseNarrative(text: string): Segment[] {
     if (earliestMatch) {
       if (earliestIndex > 0) {
         segments.push({
-          type: "narration",
+          type: 'narration',
           text: remaining.slice(0, earliestIndex),
-          full: remaining.slice(0, earliestIndex),
+          full: remaining.slice(0, earliestIndex)
         })
       }
 
-      if (earliestType === "character_dialogue") {
+      if (earliestType === 'character_dialogue') {
         segments.push({
-          type: "character_dialogue",
+          type: 'character_dialogue',
           text: earliestMatch[2],
           full: earliestMatch[0],
-          characterName: earliestCharName,
+          characterName: earliestCharName
         })
       } else {
         segments.push({
           type: earliestType,
           text: earliestMatch[1],
-          full: earliestMatch[0],
+          full: earliestMatch[0]
         })
       }
 
       remaining = remaining.slice(earliestIndex + earliestLen)
     } else {
-      segments.push({ type: "narration", text: remaining, full: remaining })
-      remaining = ""
+      segments.push({ type: 'narration', text: remaining, full: remaining })
+      remaining = ''
     }
   }
 
   return segments
 }
 
-const styleMap: Record<Segment["type"], string> = {
-  narration: "text-zinc-100",
-  dialogue: "text-amber-200",
-  thought: "text-zinc-400 italic",
-  emphasis: "text-cyan-300 font-medium",
-  action: "text-zinc-400 italic text-sm",
-  character_dialogue: "text-amber-200",
+const styleMap: Record<Segment['type'], string> = {
+  narration: 'text-zinc-100',
+  dialogue: 'text-amber-200',
+  thought: 'text-zinc-400 italic',
+  emphasis: 'text-cyan-300 font-medium',
+  action: 'text-zinc-400 italic text-sm',
+  character_dialogue: 'text-amber-200'
 }
 
 interface NarrativeTextProps {
@@ -90,22 +96,27 @@ interface NarrativeTextProps {
   characterEmoji?: Record<string, string>
 }
 
-export function NarrativeText({ text, characterEmoji = {} }: NarrativeTextProps) {
+export function NarrativeText({
+  text,
+  characterEmoji = {}
+}: NarrativeTextProps) {
   // 流式期间 text 每个 chunk 都在变，memo 避免已完成段落的重复解析
   const segments = useMemo(() => parseNarrative(text), [text])
 
   function getCharacterEmoji(name: string): string {
-    return characterEmoji[name] || "👤"
+    return characterEmoji[name] || '👤'
   }
 
   return (
     <span className="whitespace-pre-wrap text-sm leading-relaxed">
       {segments.map((seg, i) => {
-        if (seg.type === "character_dialogue") {
-          const emoji = getCharacterEmoji(seg.characterName || "")
+        if (seg.type === 'character_dialogue') {
+          const emoji = getCharacterEmoji(seg.characterName || '')
           return (
             <span key={i} className="inline-flex items-start gap-1.5 my-0.5">
-              <span className="shrink-0 text-base leading-relaxed" title={seg.characterName}>
+              <span
+                className="shrink-0 text-base leading-relaxed"
+                title={seg.characterName}>
                 {emoji}
               </span>
               <span className="text-amber-200">「{seg.text}」</span>

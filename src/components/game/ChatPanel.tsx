@@ -1,9 +1,9 @@
-"use client"
+'use client'
 
-import { memo, useCallback, useEffect, useRef, useMemo, useState } from "react"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { NarrativeText } from "./NarrativeText"
-import type { Message } from "@/types"
+import { memo, useCallback, useEffect, useRef, useMemo, useState } from 'react'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { NarrativeText } from './NarrativeText'
+import type { Message } from '@/types'
 
 interface ChatPanelProps {
   messages: Message[]
@@ -29,22 +29,20 @@ const MessageRow = memo(function MessageRow({
   msg,
   globalIdx,
   delay,
-  characterEmoji,
+  characterEmoji
 }: MessageRowProps) {
   return (
     <div
       data-msg-index={globalIdx}
-      className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"} animate-message-enter transition-shadow duration-300`}
-      style={{ animationDelay: `${Math.min(delay, 0.3)}s` }}
-    >
+      className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-message-enter transition-shadow duration-300`}
+      style={{ animationDelay: `${Math.min(delay, 0.3)}s` }}>
       <div
         className={`max-w-[85%] rounded-2xl px-4 py-3 ${
-          msg.role === "user"
-            ? "bg-primary/20 text-primary-foreground rounded-br-md shadow-[0_0_0_1px_rgba(94,106,210,0.2),0_2px_8px_rgba(0,0,0,0.3)]"
-            : "bg-zinc-800/50 text-zinc-100 rounded-bl-md border border-zinc-700/50 shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_2px_8px_rgba(0,0,0,0.3)]"
-        }`}
-      >
-        {msg.role === "user" ? (
+          msg.role === 'user'
+            ? 'bg-primary/20 text-primary-foreground rounded-br-md shadow-[0_0_0_1px_rgba(94,106,210,0.2),0_2px_8px_rgba(0,0,0,0.3)]'
+            : 'bg-zinc-800/50 text-zinc-100 rounded-bl-md border border-zinc-700/50 shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_2px_8px_rgba(0,0,0,0.3)]'
+        }`}>
+        {msg.role === 'user' ? (
           <p className="whitespace-pre-wrap text-sm leading-relaxed text-zinc-100">
             <span className="inline-flex items-start gap-1.5">
               <span className="shrink-0 text-base leading-relaxed">🧑</span>
@@ -70,7 +68,7 @@ export function ChatPanel({
   emptyTitle,
   emptySubtitle,
   selectedDay,
-  currentDay,
+  currentDay
 }: ChatPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const viewportRef = useRef<HTMLDivElement>(null)
@@ -81,20 +79,20 @@ export function ChatPanel({
       requestAnimationFrame(() => {
         viewportRef.current?.scrollTo({
           top: viewportRef.current.scrollHeight,
-          behavior: "smooth",
+          behavior: 'smooth'
         })
       })
     }
   }, [])
 
   const displayMessages = useMemo(
-    () => messages.filter((m) => m.role !== "system"),
-    [messages],
+    () => messages.filter((m) => m.role !== 'system'),
+    [messages]
   )
 
   const filteredMessages = useMemo(
     () => displayMessages.filter((m) => (m.day ?? 1) === selectedDay),
-    [displayMessages, selectedDay],
+    [displayMessages, selectedDay]
   )
 
   // 切换查看的日期时重置分页（渲染期状态调整，官方推荐模式）
@@ -108,7 +106,7 @@ export function ChatPanel({
   const visibleMessages = useMemo(
     () =>
       hiddenCount > 0 ? filteredMessages.slice(hiddenCount) : filteredMessages,
-    [filteredMessages, hiddenCount],
+    [filteredMessages, hiddenCount]
   )
 
   const globalIndexMap = useMemo(() => {
@@ -131,20 +129,24 @@ export function ChatPanel({
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
-      <ScrollArea className="flex-1 px-4" ref={scrollRef} viewportRef={viewportRef}>
+      <ScrollArea
+        className="flex-1 px-4"
+        ref={scrollRef}
+        viewportRef={viewportRef}>
         <div className="space-y-4 py-4 max-w-3xl mx-auto">
           {filteredMessages.length === 0 && !isStreaming && (
             <div className="flex flex-col items-center justify-center h-full min-h-[200px] text-zinc-600">
-              <p className="text-lg">{emptyTitle || "冒险即将开始..."}</p>
-              <p className="text-sm">{emptySubtitle || "输入你的名字，开启异世界之旅"}</p>
+              <p className="text-lg">{emptyTitle || '冒险即将开始...'}</p>
+              <p className="text-sm">
+                {emptySubtitle || '输入你的名字，开启异世界之旅'}
+              </p>
             </div>
           )}
 
           {hiddenCount > 0 && (
             <button
               onClick={loadEarlier}
-              className="mx-auto block text-xs text-zinc-500 hover:text-zinc-300 px-3 py-1.5 rounded-full border border-zinc-800 bg-zinc-900/50 transition-colors"
-            >
+              className="mx-auto block text-xs text-zinc-500 hover:text-zinc-300 px-3 py-1.5 rounded-full border border-zinc-800 bg-zinc-900/50 transition-colors">
               加载更早的消息（还有 {hiddenCount} 条）
             </button>
           )}
@@ -162,16 +164,21 @@ export function ChatPanel({
             )
           })}
 
-          {isStreaming && currentStreamContent && selectedDay === currentDay && (
-            <div className="flex justify-start">
-              <div className="max-w-[85%] rounded-2xl rounded-bl-md border border-zinc-700/50 bg-zinc-800/50 px-4 py-3 shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_2px_8px_rgba(0,0,0,0.3)]">
-                <span className="whitespace-pre-wrap text-sm leading-relaxed">
-                  <NarrativeText text={currentStreamContent} characterEmoji={characterEmoji} />
-                  <span className="inline-block w-1.5 h-4 bg-primary/70 ml-0.5 animate-stream-cursor" />
-                </span>
+          {isStreaming &&
+            currentStreamContent &&
+            selectedDay === currentDay && (
+              <div className="flex justify-start">
+                <div className="max-w-[85%] rounded-2xl rounded-bl-md border border-zinc-700/50 bg-zinc-800/50 px-4 py-3 shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_2px_8px_rgba(0,0,0,0.3)]">
+                  <span className="whitespace-pre-wrap text-sm leading-relaxed">
+                    <NarrativeText
+                      text={currentStreamContent}
+                      characterEmoji={characterEmoji}
+                    />
+                    <span className="inline-block w-1.5 h-4 bg-primary/70 ml-0.5 animate-stream-cursor" />
+                  </span>
+                </div>
               </div>
-            </div>
-          )}
+            )}
         </div>
       </ScrollArea>
     </div>

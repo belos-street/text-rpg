@@ -1,11 +1,11 @@
-"use client"
+'use client'
 
-import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
-import { SaveSlot } from "@/components/saves/SaveSlot"
-import { Button } from "@/components/ui/button"
-import { ArrowLeft } from "lucide-react"
-import type { SaveMeta } from "@/types"
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import { SaveSlot } from '@/components/saves/SaveSlot'
+import { Button } from '@/components/ui/button'
+import { ArrowLeft } from 'lucide-react'
+import type { SaveMeta } from '@/types'
 
 export default function SavesPage() {
   const router = useRouter()
@@ -17,7 +17,7 @@ export default function SavesPage() {
 
   async function fetchSaves() {
     try {
-      const res = await fetch("/api/saves")
+      const res = await fetch('/api/saves')
       const data = await res.json()
       setSaves(data.saves || [])
     } catch {
@@ -31,7 +31,7 @@ export default function SavesPage() {
 
   async function handleDelete(id: string) {
     try {
-      await fetch(`/api/saves/${id}`, { method: "DELETE" })
+      await fetch(`/api/saves/${id}`, { method: 'DELETE' })
       fetchSaves()
     } catch {
       // silent
@@ -39,7 +39,7 @@ export default function SavesPage() {
   }
 
   function handleNew() {
-    router.push("/")
+    router.push('/')
   }
 
   const slots = Array.from({ length: 10 }, (_, i) => {
@@ -52,7 +52,11 @@ export default function SavesPage() {
     <div className="min-h-screen bg-transparent relative">
       <header className="border-b border-zinc-800 bg-zinc-950/95 px-4 py-3">
         <div className="max-w-4xl mx-auto flex items-center gap-3">
-          <Button variant="ghost" size="icon" className="h-8 w-8 text-zinc-500" onClick={() => router.push("/")}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-zinc-500"
+            onClick={() => router.push('/')}>
             <ArrowLeft className="size-4" />
           </Button>
           <h1 className="text-sm font-medium text-zinc-300">存档管理</h1>

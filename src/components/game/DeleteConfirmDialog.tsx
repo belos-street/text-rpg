@@ -5,7 +5,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
+  DialogDescription
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 
@@ -18,10 +18,14 @@ interface DeleteConfirmDialogProps {
 export function DeleteConfirmDialog({
   open,
   onClose,
-  onConfirm,
+  onConfirm
 }: DeleteConfirmDialogProps) {
   return (
-    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose() }}>
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        if (!o) onClose()
+      }}>
       <DialogContent className="bg-zinc-950 border-zinc-800 text-zinc-100 max-w-sm">
         <DialogHeader>
           <DialogTitle>确认删除</DialogTitle>
