@@ -2,15 +2,67 @@ import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import fs from "fs";
 import os from "os";
 import path from "path";
+import { Database } from "bun:sqlite";
 
 // 必须在动态 import 之前设置：storage 在模块内读取该环境变量
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "text-rpg-storage-"));
 process.env.STORAGE_DATA_DIR = tmpRoot;
 
+const LEGACY_ID = "dddddddddddddddddddd";
+
+// 迁移夹具：在首次建库前写入旧版 JSON 文件，
+// 验证 storage 首次访问时自动迁移到 SQLite（旧文件改名 .migrated）
+function writeLegacyFixtures() {
+  const legacySave = {
+    id: LEGACY_ID,
+    name: "迁移存档",
+    slot: 9,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    playerName: "迁移来的玩家",
+    chapter: "序章",
+    location: "旧城区",
+    day: 1,
+    time: "黄昏",
+    hp: 80,
+    maxHp: 80,
+    mp: 30,
+    maxMp: 30,
+    gold: 20,
+    relations: [],
+    inventory: [],
+    memories: [],
+    flags: {},
+    summary: "",
+    harmony: 50,
+    scene: null,
+  };
+  fs.mkdirSync(path.join(tmpRoot, "saves"), { recursive: true });
+  fs.mkdirSync(path.join(tmpRoot, "conversations"), { recursive: true });
+  fs.writeFileSync(
+    path.join(tmpRoot, "saves", `${LEGACY_ID}.json`),
+    JSON.stringify(legacySave),
+  );
+  fs.writeFileSync(
+    path.join(tmpRoot, "conversations", `${LEGACY_ID}.json`),
+    JSON.stringify([{ role: "user", content: "旧对话内容", day: 1, chapter: "序章" }]),
+  );
+  fs.writeFileSync(
+    path.join(tmpRoot, "global.json"),
+    JSON.stringify({
+      unlockedEndings: ["ending_dawn_pact"],
+      updatedAt: "2026-01-02T00:00:00.000Z",
+    }),
+  );
+}
+writeLegacyFixtures();
+
 import type * as StorageModule from "./storage";
+import type * as GlobalProgressModule from "./global-progress";
 import type { SaveData } from "@/types";
 
 let storage: typeof StorageModule;
+let globalProgress: typeof GlobalProgressModule;
 
 function makeMemory(content: string, importance: number) {
   return {
@@ -51,10 +103,40 @@ function makeSaveData(id: string): SaveData {
 
 beforeAll(async () => {
   storage = await import("./storage");
+  globalProgress = await import("./global-progress");
 });
 
 afterAll(() => {
   fs.rmSync(tmpRoot, { recursive: true, force: true });
+});
+
+describe("旧版 JSON 自动迁移", () => {
+  test("存档、会话、全局进度全部迁入 SQLite", () => {
+    // 首个 storage 调用已触发建库+迁移
+    const save = storage.getSave(LEGACY_ID);
+    expect(save?.playerName).toBe("迁移来的玩家");
+    expect(save?.slot).toBe(9);
+
+    const conv = storage.getConversation(LEGACY_ID);
+    expect(conv).toHaveLength(1);
+    expect(conv[0].content).toBe("旧对话内容");
+
+    const progress = globalProgress.getGlobalProgress();
+    expect(progress.unlockedEndings).toContain("ending_dawn_pact");
+  });
+
+  test("旧文件改名 .migrated 备份（不删除）", () => {
+    expect(
+      fs.existsSync(path.join(tmpRoot, "saves", `${LEGACY_ID}.json.migrated`)),
+    ).toBe(true);
+    expect(
+      fs.existsSync(
+        path.join(tmpRoot, "conversations", `${LEGACY_ID}.json.migrated`),
+      ),
+    ).toBe(true);
+    expect(fs.existsSync(path.join(tmpRoot, "global.json.migrated"))).toBe(true);
+    expect(fs.existsSync(path.join(tmpRoot, "game.db"))).toBe(true);
+  });
 });
 
 describe("storage 基础读写", () => {
@@ -70,9 +152,14 @@ describe("storage 基础读写", () => {
     expect(saves.length).toBeGreaterThanOrEqual(1);
   });
 
-  test("损坏 JSON 的存档被跳过（不进列表）", () => {
-    const savesDir = path.join(tmpRoot, "saves");
-    fs.writeFileSync(path.join(savesDir, "bbbbbbbbbbbbbbbbbbbb.json"), "{broken");
+  test("损坏 JSON 的存档行被跳过（不进列表）", () => {
+    // 直接向测试库插入 data 列非法的行，模拟损坏
+    const db = new Database(path.join(tmpRoot, "game.db"));
+    db.run(
+      "INSERT OR IGNORE INTO saves (id, slot, player_name, chapter, day, updated_at, data) VALUES (?, 1, '', '', 1, '', '{broken')",
+      ["bbbbbbbbbbbbbbbbbbbb"],
+    );
+    db.close();
     const saves = storage.listSaves();
     expect(saves.some((s) => s.id === "bbbbbbbbbbbbbbbbbbbb")).toBe(false);
   });
@@ -115,7 +202,7 @@ describe("updateSave 记忆裁剪（MAX_MEMORIES=20）", () => {
   });
 });
 
-describe("会话文件", () => {
+describe("会话读写", () => {
   test("appendConversation → getConversation 往返", async () => {
     const created = storage.createSave(makeSaveData("placeholder"));
     await storage.appendConversation(created.id, [
@@ -126,17 +213,22 @@ describe("会话文件", () => {
     expect(conv[0].day).toBe(1);
   });
 
-  test("损坏的会话文件被备份而非覆写（#27）", async () => {
+  test("popLastTurn 移除最后一轮（C1 重新生成）", async () => {
     const created = storage.createSave(makeSaveData("placeholder"));
-    const convPath = path.join(tmpRoot, "conversations", `${created.id}.json`);
-    fs.writeFileSync(convPath, '{"broken json');
-    const conv = storage.getConversation(created.id);
-    expect(conv).toEqual([]);
-    const files = fs.readdirSync(path.join(tmpRoot, "conversations"));
-    expect(files.some((f) => f.startsWith(`${created.id}.json.corrupt-`))).toBe(true);
+    await storage.appendConversation(created.id, [
+      { role: "user", content: "行动" },
+      { role: "assistant", content: "叙述" },
+    ]);
+    expect(await storage.popLastTurn(created.id)).toBe(true);
+    expect(storage.getConversation(created.id)).toEqual([]);
+    // 不足一轮时返回 false
+    await storage.appendConversation(created.id, [
+      { role: "user", content: "只有一条" },
+    ]);
+    expect(await storage.popLastTurn(created.id)).toBe(false);
   });
 
-  test("deleteSave 联动删除会话文件", async () => {
+  test("deleteSave 联动删除会话", async () => {
     const created = storage.createSave(makeSaveData("placeholder"));
     await storage.appendConversation(created.id, [{ role: "user", content: "x" }]);
     expect(storage.deleteSave(created.id)).toBe(true);

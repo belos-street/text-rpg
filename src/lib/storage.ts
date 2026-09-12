@@ -1,29 +1,12 @@
-import fs from "fs";
-import path from "path";
 import { generateId } from "./utils";
 import { loadStoryConfig } from "./game-data";
 import { extractNarration } from "./parser";
+import { getDb } from "./db";
 import type { SaveData, SaveMeta, Message } from "@/types";
 
-// 数据目录可通过环境变量注入（测试隔离用），默认项目根目录 data/
-function dataDir(): string {
-  return process.env.STORAGE_DATA_DIR || path.join(process.cwd(), "data");
-}
-function savesDir(): string {
-  return path.join(dataDir(), "saves");
-}
-function conversationsDir(): string {
-  return path.join(dataDir(), "conversations");
-}
 const MAX_MEMORIES = 20;
-// generateId 产生 10 字节随机数的 hex（20 字符），在此收紧格式以防路径穿越
+// generateId 产生 10 字节随机数的 hex（20 字符），在此收紧格式以防注入/穿越
 const SAVE_ID_PATTERN = /^[a-f0-9]{20}$/;
-
-function ensureDir(dir: string) {
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-}
 
 function normalizeSaveId(id: string): string | null {
   return SAVE_ID_PATTERN.test(id) ? id : null;
@@ -42,56 +25,55 @@ function enqueueWrite<T>(id: string, task: () => T): Promise<T> {
   return next;
 }
 
-function savePath(id: string): string {
-  return path.join(savesDir(), `${id}.json`);
+function toMeta(data: SaveData): SaveMeta {
+  return {
+    id: data.id,
+    name: data.name,
+    slot: data.slot,
+    createdAt: data.createdAt,
+    updatedAt: data.updatedAt,
+    playerName: data.playerName,
+    chapter: data.chapter,
+    location: data.location,
+    day: data.day,
+    time: data.time,
+    hp: data.hp,
+    maxHp: data.maxHp,
+    mp: data.mp,
+    maxMp: data.maxMp,
+    gold: data.gold,
+  };
 }
 
-function conversationPath(id: string): string {
-  return path.join(conversationsDir(), `${id}.json`);
+function parseSaveRow(id: string, raw: string): SaveData | null {
+  try {
+    return JSON.parse(raw) as SaveData;
+  } catch (error) {
+    console.error(`[storage] 存档 ${id} 的 JSON 损坏，已跳过:`, error);
+    return null;
+  }
 }
 
 export function listSaves(): SaveMeta[] {
-  ensureDir(savesDir());
-  const files = fs.readdirSync(savesDir()).filter((f) => f.endsWith(".json"));
-  return files
-    .map((f) => {
-      try {
-        const data: SaveData = JSON.parse(
-          fs.readFileSync(path.join(savesDir(), f), "utf-8"),
-        );
-        return {
-          id: data.id,
-          name: data.name,
-          slot: data.slot,
-          createdAt: data.createdAt,
-          updatedAt: data.updatedAt,
-          playerName: data.playerName,
-          chapter: data.chapter,
-          location: data.location,
-          day: data.day,
-          time: data.time,
-          hp: data.hp,
-          maxHp: data.maxHp,
-          mp: data.mp,
-          maxMp: data.maxMp,
-          gold: data.gold,
-        } as SaveMeta;
-      } catch (error) {
-        console.error(`[storage] 存档文件损坏，已从列表跳过: ${f}`, error);
-        return null;
-      }
-    })
-    .filter((s): s is SaveMeta => s !== null)
+  const rows = getDb()
+    .query("SELECT id, data FROM saves")
+    .all() as { id: string; data: string }[];
+  return rows
+    .map((row) => parseSaveRow(row.id, row.data))
+    .filter((s): s is SaveData => s !== null)
+    .map(toMeta)
     .sort((a, b) => a.slot - b.slot);
 }
 
 export function getSave(id: string): SaveData | null {
   const validId = normalizeSaveId(id);
   if (!validId) return null;
-  ensureDir(savesDir());
+  const row = getDb()
+    .query("SELECT id, data FROM saves WHERE id = ?")
+    .get(validId) as { id: string; data: string } | null;
+  if (!row) return null;
   try {
-    const raw = fs.readFileSync(savePath(validId), "utf-8");
-    return JSON.parse(raw) as SaveData;
+    return JSON.parse(row.data) as SaveData;
   } catch {
     return null;
   }
@@ -100,14 +82,26 @@ export function getSave(id: string): SaveData | null {
 export function createSave(
   data: Omit<SaveData, "id" | "createdAt" | "updatedAt">,
 ): SaveData {
-  ensureDir(savesDir());
   const save: SaveData = {
     ...data,
     id: generateId(),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
-  fs.writeFileSync(savePath(save.id), JSON.stringify(save, null, 2), "utf-8");
+  getDb()
+    .query(
+      `INSERT INTO saves (id, slot, player_name, chapter, day, updated_at, data)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      save.id,
+      save.slot,
+      save.playerName,
+      save.chapter,
+      save.day,
+      save.updatedAt,
+      JSON.stringify(save),
+    );
   return save;
 }
 
@@ -134,7 +128,21 @@ function updateSaveNow(validId: string, data: Partial<SaveData>): SaveData | nul
     updatedAt: new Date().toISOString(),
     memories,
   };
-  fs.writeFileSync(savePath(validId), JSON.stringify(updated, null, 2), "utf-8");
+  getDb()
+    .query(
+      `UPDATE saves
+       SET data = ?, slot = ?, player_name = ?, chapter = ?, day = ?, updated_at = ?
+       WHERE id = ?`,
+    )
+    .run(
+      JSON.stringify(updated),
+      updated.slot,
+      updated.playerName,
+      updated.chapter,
+      updated.day,
+      updated.updatedAt,
+      validId,
+    );
   return updated;
 }
 
@@ -150,51 +158,54 @@ export function updateSave(
 export function deleteSave(id: string): boolean {
   const validId = normalizeSaveId(id);
   if (!validId) return false;
-  try {
-    fs.unlinkSync(savePath(validId));
-    const convPath = conversationPath(validId);
-    if (fs.existsSync(convPath)) {
-      fs.unlinkSync(convPath);
-    }
-    return true;
-  } catch {
-    return false;
-  }
+  const db = getDb();
+  const result = db
+    .query("DELETE FROM saves WHERE id = ?")
+    .run(validId);
+  db.query("DELETE FROM conversations WHERE save_id = ?").run(validId);
+  return Number(result.changes) > 0;
 }
 
 export function getConversation(saveId: string): Message[] {
   const validId = normalizeSaveId(saveId);
   if (!validId) return [];
-  ensureDir(conversationsDir());
-  const filePath = conversationPath(validId);
-  try {
-    const raw = fs.readFileSync(filePath, "utf-8");
-    return JSON.parse(raw) as Message[];
-  } catch (error) {
-    // 文件不存在是新存档的正常情况；存在但解析失败=已损坏：
-    // 先备份再重置，防止下一次 append 把全部历史覆写掉
-    if (error instanceof SyntaxError && fs.existsSync(filePath)) {
-      const backupPath = `${filePath}.corrupt-${Date.now()}`;
-      try {
-        fs.renameSync(filePath, backupPath);
-        console.error(`[storage] 会话文件损坏，已备份至 ${backupPath}`);
-      } catch (renameError) {
-        console.error("[storage] 会话文件损坏且备份失败:", renameError);
-      }
-    }
-    return [];
-  }
+  const rows = getDb()
+    .query(
+      "SELECT role, content, day, chapter FROM conversations WHERE save_id = ? ORDER BY seq ASC",
+    )
+    .all(validId) as {
+    role: string;
+    content: string;
+    day: number | null;
+    chapter: string | null;
+  }[];
+  return rows.map((row) => ({
+    role: row.role as Message["role"],
+    content: row.content,
+    day: row.day ?? undefined,
+    chapter: row.chapter ?? undefined,
+  }));
 }
 
 function appendConversationNow(validId: string, messages: Message[]) {
-  ensureDir(conversationsDir());
-  const existing = getConversation(validId);
-  const updated = [...existing, ...messages];
-  fs.writeFileSync(
-    conversationPath(validId),
-    JSON.stringify(updated, null, 2),
-    "utf-8",
+  if (messages.length === 0) return;
+  const db = getDb();
+  const insert = db.query(
+    `INSERT INTO conversations (save_id, seq, role, content, day, chapter, created_at)
+     VALUES (?, (SELECT COALESCE(MAX(seq), 0) + 1 FROM conversations WHERE save_id = ?),
+             ?, ?, ?, ?, ?)`,
   );
+  const now = new Date().toISOString();
+  db.run("BEGIN");
+  try {
+    for (const m of messages) {
+      insert.run(validId, validId, m.role, m.content, m.day ?? null, m.chapter ?? null, now);
+    }
+    db.run("COMMIT");
+  } catch (error) {
+    db.run("ROLLBACK");
+    throw error;
+  }
 }
 
 export function appendConversation(
@@ -214,15 +225,16 @@ export function popLastTurn(saveId: string): Promise<boolean> {
   const validId = normalizeSaveId(saveId);
   if (!validId) return Promise.resolve(false);
   return enqueueWrite(validId, () => {
-    const conversation = getConversation(validId);
-    if (conversation.length < 2) return false;
-    const last = conversation[conversation.length - 1];
-    const prev = conversation[conversation.length - 2];
-    if (last.role !== "assistant" || prev.role !== "user") return false;
-    fs.writeFileSync(
-      conversationPath(validId),
-      JSON.stringify(conversation.slice(0, -2), null, 2),
-      "utf-8",
+    const db = getDb();
+    const rows = db
+      .query("SELECT seq, role FROM conversations WHERE save_id = ? ORDER BY seq DESC LIMIT 2")
+      .all(validId) as { seq: number; role: string }[];
+    if (rows.length < 2) return false;
+    if (rows[0].role !== "assistant" || rows[1].role !== "user") return false;
+    db.query("DELETE FROM conversations WHERE save_id = ? AND seq IN (?, ?)").run(
+      validId,
+      rows[0].seq,
+      rows[1].seq,
     );
     return true;
   });

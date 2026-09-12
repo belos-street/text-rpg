@@ -245,13 +245,19 @@ export async function POST(req: NextRequest) {
           day: save!.day,
           chapter: save!.chapter,
         };
-        const assistantMsg: Message = {
-          role: "assistant",
-          content: fullContent,
-          day: save!.day,
-          chapter: save!.chapter,
-        };
-        await appendConversation(save!.id, [userMsg, assistantMsg]);
+        // LLM 完全失败（如模型服务离线）时只保留玩家消息，
+        // 空 assistant 消息入库会污染历史并误导后续回合
+        const msgs: Message[] = [userMsg];
+        if (fullContent.trim()) {
+          const assistantMsg: Message = {
+            role: "assistant",
+            content: fullContent,
+            day: save!.day,
+            chapter: save!.chapter,
+          };
+          msgs.push(assistantMsg);
+        }
+        await appendConversation(save!.id, msgs);
 
         const updatedDialogueHistory = getConversation(save!.id);
         const summary = summarizeConversation(

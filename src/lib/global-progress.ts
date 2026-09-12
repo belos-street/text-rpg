@@ -1,8 +1,7 @@
-import fs from "fs";
-import path from "path";
+import { getDb } from "./db";
 
 /**
- * C6 结局图鉴：跨存档的全局进度（data/global.json）。
+ * C6 结局图鉴：跨存档的全局进度（SQLite global_progress 表）。
  * 记录已解锁结局，供标题屏展示与复玩激励。
  */
 
@@ -11,34 +10,28 @@ export interface GlobalProgress {
   updatedAt: string;
 }
 
-function progressPath(): string {
-  const dir = process.env.STORAGE_DATA_DIR || path.join(process.cwd(), "data");
-  return path.join(dir, "global.json");
-}
-
 export function getGlobalProgress(): GlobalProgress {
-  try {
-    const raw = fs.readFileSync(progressPath(), "utf-8");
-    const parsed = JSON.parse(raw) as Partial<GlobalProgress>;
-    return {
-      unlockedEndings: Array.isArray(parsed.unlockedEndings)
-        ? parsed.unlockedEndings
-        : [],
-      updatedAt: parsed.updatedAt ?? "",
-    };
-  } catch {
-    return { unlockedEndings: [], updatedAt: "" };
-  }
+  const rows = getDb()
+    .query("SELECT key, updated_at FROM global_progress")
+    .all() as { key: string; updated_at: string | null }[];
+  const unlockedEndings = rows
+    .filter((row) => row.key.startsWith("ending:"))
+    .map((row) => row.key.slice("ending:".length));
+  const updatedAt =
+    rows
+      .map((row) => row.updated_at ?? "")
+      .filter(Boolean)
+      .sort()
+      .pop() ?? "";
+  return { unlockedEndings, updatedAt };
 }
 
 export function unlockEnding(endingId: string): GlobalProgress {
-  const progress = getGlobalProgress();
-  if (!progress.unlockedEndings.includes(endingId)) {
-    progress.unlockedEndings.push(endingId);
-  }
-  progress.updatedAt = new Date().toISOString();
-  const filePath = progressPath();
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, JSON.stringify(progress, null, 2), "utf-8");
-  return progress;
+  getDb()
+    .query(
+      `INSERT INTO global_progress (key, value, updated_at) VALUES (?, '', ?)
+       ON CONFLICT(key) DO UPDATE SET updated_at = excluded.updated_at`,
+    )
+    .run(`ending:${endingId}`, new Date().toISOString());
+  return getGlobalProgress();
 }
