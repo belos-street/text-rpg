@@ -20,6 +20,8 @@
 | 本批提交 | 解耦：prompts.ts 硬编码的「重要规则」8 条全部迁入 core-rules.md（剧情与选项/突破事件/和睦度阈值/第一人称补充），代码提示词只保留引擎契约（输出格式/渲染格式/数据注入） |
 | 本批提交 | Bug 修复：C2 固定序章的 SSE 事件 content+done 同包发送，客户端 done 先于 content 处理导致序章被丢弃、空状态提示"输入你的名字"二次出现——服务端分包发送 + 客户端 done 后置；顺带删除标题屏误导性的"需要配置 AI API 密钥"静态提示（浏览器实测复现→修复→验证） |
 | 本批提交 | json_schema 优化：affectionChanges 19 个 ID 改为可选键（语法层实测支持稀疏输出）+ choices minItems2/maxItems4 + 数值 minimum 防护 + importance 1-10 + schema 缓存随 config mtime 失效（改配置无需重启）+ 防漂移测试（JSON Schema 与 zod 字段一致性，50 用例全绿） |
+| `e4e45a0` | 升级路线图 ⭐1⭐2：SQLite 数据层迁移（自动迁移/会话 O(1) 追加/global-progress 入库）+ 生产模式部署（bun --bun 固定运行时）；顺带修复 LLM 离线时空 assistant 入库 |
+| 本批提交 | #18 关账（会话查询侧 LIMIT 封顶）+ M3 真 LLM 摘要（summarySeq 节流、异步不阻塞）+ D4 调试面板最小版（?debug=1）；58 测试全绿。CI workflow 按用户决策不做 |
 
 ---
 
@@ -136,19 +138,19 @@
 
 ---
 
-## 批次 8 · 引擎平台化 💡（✅ 核心完成，2 项延后）
+## 批次 8 · 引擎平台化 💡（✅ 完成，D2 延后）
 
 - [x] **M1 女主档案按场景筛选** 💡 L：`config.chapterHeroines` 每章重点女主 → `loadHeroinesByIds` 按章注入（未配置章节回退全量）
 - [x] **M2 主线大纲按章注入** 💡 M：`loadMainQuestForChapter` 提取总纲+当前章节+推进原则（15k → ~2-3k）
-- [ ] **M3 真 LLM 摘要** ⏸ 延后：需额外 LLM 调用与触发队列，当前 S1 压缩 + 窗口 10 已够用；建议实测长战役后决定
+- [x] **M3 真 LLM 摘要** ✅（2026-09-12）：`summary.ts`——每累计 10 条新消息（AI_SUMMARY_EVERY 可调）异步执行一次轻量 LLM 调用，伪摘要+最近 14 条叙述 → 300 字连贯摘要 → 写回 save.summary（summarySeq 节流）；不阻塞响应、失败下回合重试、AI_SUMMARY=off 可关
 - [ ] **D2 多故事包** ⏸ 延后：架构级改造（stories/<id>/ + 选择页），建议作为独立版本规划
 - [x] **D3 game-data 校验 CLI** 💡 S：`bun run validate:story`（94 项检查：文件完整性/config 字段/ID-emoji 一致/章节映射）
-- [ ] **D4 调试面板** ⏸ 延后：UI 工作量大，建议实测游戏时按需做
+- [x] **D4 调试面板（最小版）** ✅（2026-09-12）：URL 带 `?debug=1` 时，chat SSE 追加一次性 debug 事件（请求消息预览与字符数/原始输出/解析结果/会话总数），前端 [debug-panel.tsx](src/components/game/debug-panel.tsx) 浮层展示
 - [x] **D5 模型配置文档** 💡 S：README 补充推荐模型/reasoning/结构化输出/前缀缓存说明
 
 ---
 
-## 批次 9 · 清理与风格 ⚪（✅ 已完成，2 项延后）
+## 批次 9 · 清理与风格 ⚪（✅ 已完成，#22 延后）
 
 - [x] **#15 剩余死代码**：`GameUpdate.newChoices`、`SaveData.dialogueHistory` 已删（S4 已删 trim 函数）
 - [x] **#16 loadGameContext 原地 sort**：随批次 3 重写修复
@@ -157,7 +159,7 @@
 - [x] **#23 Sidebar 文案与遮罩**：和睦度文案纠正；遮罩点击关闭侧栏
 - [x] **choice.id React key 冲突**：`${choice.id}-${index}` 兜底
 - [ ] **#22 格式化工具链** ⏸ 延后：涉及全量重排版与组件文件名规范决策，需单独一次"仅格式化"提交
-- [ ] **#18 会话文件无上限增长** ⏸ 延后：长战役才明显，观察后再定
+- [x] **#18 会话无上限增长** ✅（2026-09-12）：SQLite 迁移后追加写入 O(1)（根治）；同批补查询侧封顶——`getConversation(saveId, limit?)`，chat 路由按需取最近 10/6/14 条，读档恢复与导出仍全量
 
 ---
 

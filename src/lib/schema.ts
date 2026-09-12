@@ -97,6 +97,8 @@ export const chatRequestSchema = z.object({
   playerName: z.string().min(1).max(20).optional(),
   /** C1 重新生成：移除最后一轮对话后重掷叙述与选项 */
   regenerate: z.boolean().optional(),
+  /** D4 调试面板：附带请求提示词/原始输出等诊断信息 */
+  debug: z.boolean().optional(),
 });
 
 export const createSaveRequestSchema = z.object({

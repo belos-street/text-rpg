@@ -89,6 +89,8 @@ export interface SaveData extends SaveMeta {
   /** 剧情标记：主线过关条件/支线触发的结构化状态（B5） */
   flags?: Record<string, number | boolean | string>;
   summary: string;
+  /** M3：上次真 LLM 摘要时的会话消息总数（触发节流用），undefined 表示尚未做过真摘要 */
+  summarySeq?: number;
   harmony: number;
   scene: SceneInfo | null;
 }

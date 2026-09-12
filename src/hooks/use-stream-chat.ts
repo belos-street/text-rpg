@@ -15,6 +15,8 @@ interface StreamChatCallbacks {
   onMessage: (msg: Message) => void;
   onError: (msg: Message) => void;
   onStreamEnd: () => void;
+  /** D4 调试面板：URL 带 ?debug=1 时接收服务端诊断数据 */
+  onDebug?: (payload: Record<string, unknown>) => void;
 }
 
 export interface SendMessageOptions {
@@ -41,6 +43,10 @@ export function useStreamChat(callbacks: StreamChatCallbacks) {
       abortRef.current = controller;
 
       try {
+        // D4：URL 带 ?debug=1 时请求服务端附带诊断信息
+        const debugEnabled =
+          typeof window !== "undefined" &&
+          new URLSearchParams(window.location.search).has("debug");
         const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -49,6 +55,7 @@ export function useStreamChat(callbacks: StreamChatCallbacks) {
             message: msg || "",
             playerName: playerNameForNew || undefined,
             regenerate: options?.regenerate || undefined,
+            debug: debugEnabled || undefined,
           }),
           signal: controller.signal,
         });
@@ -91,6 +98,11 @@ export function useStreamChat(callbacks: StreamChatCallbacks) {
                   role: "assistant",
                   content: `[系统] ${payload.persistError}`,
                 });
+                continue;
+              }
+
+              if (payload.debug) {
+                callbacks.onDebug?.(payload.debug);
                 continue;
               }
 

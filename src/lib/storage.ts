@@ -166,25 +166,46 @@ export function deleteSave(id: string): boolean {
   return Number(result.changes) > 0;
 }
 
-export function getConversation(saveId: string): Message[] {
+export function getConversation(saveId: string, limit?: number): Message[] {
   const validId = normalizeSaveId(saveId);
   if (!validId) return [];
-  const rows = getDb()
-    .query(
-      "SELECT role, content, day, chapter FROM conversations WHERE save_id = ? ORDER BY seq ASC",
-    )
-    .all(validId) as {
+  const db = getDb();
+  // #18 查询侧封顶：带 limit 时只取最近 N 条（倒序取回后正序返回），
+  // 长战役下每回合不再全量加载；不带 limit 用于读档恢复/导出等全量场景
+  const rows = (
+    limit && limit > 0
+      ? db
+          .query(
+            "SELECT role, content, day, chapter FROM conversations WHERE save_id = ? ORDER BY seq DESC LIMIT ?",
+          )
+          .all(validId, limit)
+      : db
+          .query(
+            "SELECT role, content, day, chapter FROM conversations WHERE save_id = ? ORDER BY seq ASC",
+          )
+          .all(validId)
+  ) as {
     role: string;
     content: string;
     day: number | null;
     chapter: string | null;
   }[];
-  return rows.map((row) => ({
+  const messages = rows.map((row) => ({
     role: row.role as Message["role"],
     content: row.content,
     day: row.day ?? undefined,
     chapter: row.chapter ?? undefined,
   }));
+  return limit && limit > 0 ? messages.reverse() : messages;
+}
+
+export function countConversation(saveId: string): number {
+  const validId = normalizeSaveId(saveId);
+  if (!validId) return 0;
+  const row = getDb()
+    .query("SELECT COUNT(*) AS total FROM conversations WHERE save_id = ?")
+    .get(validId) as { total: number };
+  return Number(row.total);
 }
 
 function appendConversationNow(validId: string, messages: Message[]) {

@@ -228,6 +228,21 @@ describe("会话读写", () => {
     expect(await storage.popLastTurn(created.id)).toBe(false);
   });
 
+  test("getConversation limit 只取最近 N 条且保持正序（#18）", async () => {
+    const created = storage.createSave(makeSaveData("placeholder"));
+    await storage.appendConversation(created.id, [
+      { role: "user", content: "第1条" },
+      { role: "assistant", content: "第2条" },
+      { role: "user", content: "第3条" },
+      { role: "assistant", content: "第4条" },
+    ]);
+    expect(storage.countConversation(created.id)).toBe(4);
+    const recent = storage.getConversation(created.id, 2);
+    expect(recent.map((m) => m.content)).toEqual(["第3条", "第4条"]);
+    // limit 大于总数时返回全部
+    expect(storage.getConversation(created.id, 99)).toHaveLength(4);
+  });
+
   test("deleteSave 联动删除会话", async () => {
     const created = storage.createSave(makeSaveData("placeholder"));
     await storage.appendConversation(created.id, [{ role: "user", content: "x" }]);

@@ -7,9 +7,11 @@ import {
   updateSave,
   appendConversation,
   getConversation,
+  countConversation,
   summarizeConversation,
   popLastTurn,
 } from "@/lib/storage";
+import { summarizeSaveIfStale } from "@/lib/summary";
 import { loadStoryConfig } from "@/lib/game-data";
 import { parseGameUpdate, narrationPreview } from "@/lib/parser";
 import { chatRequestSchema } from "@/lib/schema";
@@ -80,7 +82,7 @@ export async function POST(req: NextRequest) {
       { status: 400, headers: { "Content-Type": "application/json" } },
     );
   }
-  const { saveId, message, playerName, regenerate } = bodyResult.data;
+  const { saveId, message, playerName, regenerate, debug } = bodyResult.data;
 
   const encoder = new TextEncoder();
   const sseHeaders = {
@@ -118,7 +120,8 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const dialogueHistory = getConversation(save.id);
+  // #18：提示词只需最近 10 条（buildMessages 内部窗口一致），长战役不再全量加载
+  const dialogueHistory = getConversation(save.id, 10);
   const storyConfig = loadStoryConfig();
 
   // C2 固定开场序章：新档且配置了 openingNarration 时零延迟返回，不调用 LLM
@@ -259,7 +262,8 @@ export async function POST(req: NextRequest) {
         }
         await appendConversation(save!.id, msgs);
 
-        const updatedDialogueHistory = getConversation(save!.id);
+        // #18：启发式摘要只需最近 6 条
+        const updatedDialogueHistory = getConversation(save!.id, 6);
         const summary = summarizeConversation(
           updatedDialogueHistory,
           save!.summary,
@@ -369,6 +373,47 @@ export async function POST(req: NextRequest) {
         }
 
         await updateSave(save!.id, updateData);
+
+        // M3 真 LLM 摘要：累计足够新消息后异步执行，不阻塞本回合响应；
+        // 失败静默（下回合重试），AI_SUMMARY=off 可关闭
+        const summarySeq = save!.summarySeq;
+        const prevSummary = save!.summary;
+        const totalMessages = countConversation(save!.id);
+        void summarizeSaveIfStale(
+          save!.id,
+          prevSummary,
+          getConversation(save!.id, 14),
+          totalMessages,
+          summarySeq,
+        ).catch(() => {});
+
+        // D4 调试面板：附带诊断信息（请求提示词预览/原始输出/解析结果/耗时）
+        if (debug) {
+          try {
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({
+                  debug: {
+                    requestMessages: messages.map((m) => ({
+                      role: m.role,
+                      chars: m.content.length,
+                      preview: m.content.slice(0, 800),
+                    })),
+                    totalPromptChars: messages.reduce(
+                      (sum, m) => sum + m.content.length,
+                      0,
+                    ),
+                    rawOutput: fullContent.slice(0, 2000),
+                    rawOutputChars: fullContent.length,
+                    parsedOk: !!parsed,
+                    choicesCount: parsed?.choices?.length ?? 0,
+                    totalMessages,
+                  },
+                })}\n\n`,
+              ),
+            );
+          } catch {}
+        }
       } catch (error) {
         console.error("[chat] 存档持久化失败:", error);
         try {

@@ -237,6 +237,36 @@ export async function* streamChat(
   }
 }
 
+/**
+ * M3 真 LLM 摘要用的一次性补全（非流式）。
+ * 与 streamChat 共用客户端配置（超时/重试/reasoning 白名单）。
+ */
+export async function getChatCompletion(
+  messages: { role: string; content: string }[],
+  maxTokens: number,
+): Promise<string> {
+  const client = getClient();
+  const params: Record<string, unknown> = {
+    model: getModel(),
+    messages,
+    max_tokens: maxTokens,
+    stream: false,
+  };
+  const reasoning = getReasoningEffort();
+  if (reasoning && isLocalBaseUrl()) {
+    params.reasoning_effort = reasoning;
+  }
+  const res = (await client.chat.completions.create(
+    params as unknown as Parameters<typeof client.chat.completions.create>[0],
+  )) as { choices?: { message?: { content?: string } }[] };
+  const raw = res.choices?.[0]?.message?.content ?? "";
+  // 推理模型的思考过程可能混入正文，剥掉 <think> 块与代码围栏
+  return raw
+    .replace(/<think>[\s\S]*?<\/think>/g, "")
+    .replace(/```[\s\S]*?```/g, "")
+    .trim();
+}
+
 export function checkConfig(): boolean {
   return !!process.env.AI_BASE_URL;
 }

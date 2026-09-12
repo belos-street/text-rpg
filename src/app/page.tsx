@@ -5,6 +5,7 @@ import { Save, Menu, RefreshCw, Download } from 'lucide-react'
 import { StatusBar } from '@/components/game/StatusBar'
 import { ChatPanel } from '@/components/game/ChatPanel'
 import { ChoicePanel } from '@/components/game/ChoicePanel'
+import { DebugPanel } from '@/components/game/debug-panel'
 import { InputPanel } from '@/components/game/InputPanel'
 import { Sidebar } from '@/components/game/Sidebar'
 import { TitleScreen } from '@/components/game/TitleScreen'
@@ -77,6 +78,12 @@ export default function GamePage() {
   const [affectionStages, setAffectionStages] = useState<AffectionStage[]>([])
   const [affectionToast, setAffectionToast] = useState<string | null>(null)
   const [endingCount, setEndingCount] = useState<number | null>(null)
+  // D4 调试面板：仅当 URL 带 ?debug=1 时启用
+  const [debugEnabled] = useState(() =>
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).has('debug'),
+  )
+  const [debugData, setDebugData] = useState<Record<string, unknown> | null>(null)
   const [storyConfig, setStoryConfig] = useState({
     title: '加载中',
     subtitle: '',
@@ -182,6 +189,9 @@ export default function GamePage() {
     },
     onError: (msg: Message) => {
       setMessages((prev) => [...prev, { ...msg, day: playerStateRef.current.day, chapter: playerStateRef.current.chapter }])
+    },
+    onDebug: (payload: Record<string, unknown>) => {
+      setDebugData(payload)
     },
     onStreamEnd: () => {
       setIsStreaming(false)
@@ -641,6 +651,8 @@ export default function GamePage() {
           }}
         />
       </div>
+
+      {debugEnabled && <DebugPanel data={debugData} />}
 
       <Dialog open={showSaveDialog} onOpenChange={setShowSaveDialog}>
         <DialogContent className="bg-zinc-950 border-zinc-800 text-zinc-100 max-w-sm">
