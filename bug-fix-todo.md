@@ -22,6 +22,8 @@
 | 本批提交 | json_schema 优化：affectionChanges 19 个 ID 改为可选键（语法层实测支持稀疏输出）+ choices minItems2/maxItems4 + 数值 minimum 防护 + importance 1-10 + schema 缓存随 config mtime 失效（改配置无需重启）+ 防漂移测试（JSON Schema 与 zod 字段一致性，50 用例全绿） |
 | `e4e45a0` | 升级路线图 ⭐1⭐2：SQLite 数据层迁移（自动迁移/会话 O(1) 追加/global-progress 入库）+ 生产模式部署（bun --bun 固定运行时）；顺带修复 LLM 离线时空 assistant 入库 |
 | 本批提交 | #18 关账（会话查询侧 LIMIT 封顶）+ M3 真 LLM 摘要（summarySeq 节流、异步不阻塞）+ D4 调试面板最小版（?debug=1）；58 测试全绿。CI workflow 按用户决策不做 |
+| `c947116` | RAG 阶段 2：FTS5 全文索引 + 中文 bigram 分词，top-3 早期剧情注入【相关回忆】块 |
+| `06a8fc4` / `684c941` | #22 格式化工具链（oxfmt，单独"仅格式化"提交）+ 组件文件名统一 kebab-case（单独重命名提交）；64 测试全绿 |
 
 ---
 
@@ -143,14 +145,14 @@
 - [x] **M1 女主档案按场景筛选** 💡 L：`config.chapterHeroines` 每章重点女主 → `loadHeroinesByIds` 按章注入（未配置章节回退全量）
 - [x] **M2 主线大纲按章注入** 💡 M：`loadMainQuestForChapter` 提取总纲+当前章节+推进原则（15k → ~2-3k）
 - [x] **M3 真 LLM 摘要** ✅（2026-09-12）：`summary.ts`——每累计 10 条新消息（AI_SUMMARY_EVERY 可调）异步执行一次轻量 LLM 调用，伪摘要+最近 14 条叙述 → 300 字连贯摘要 → 写回 save.summary（summarySeq 节流）；不阻塞响应、失败下回合重试、AI_SUMMARY=off 可关
-- [ ] **D2 多故事包** ⏸ 延后：架构级改造（stories/<id>/ + 选择页），建议作为独立版本规划
+- [x] **D2 多故事包** ❌（2026-09-12 用户决策不做：单故事包已满足需求，记录见 [upgrade-roadmap](./upgrade-roadmap.md)「有意不做」）
 - [x] **D3 game-data 校验 CLI** 💡 S：`bun run validate:story`（94 项检查：文件完整性/config 字段/ID-emoji 一致/章节映射）
 - [x] **D4 调试面板（最小版）** ✅（2026-09-12）：URL 带 `?debug=1` 时，chat SSE 追加一次性 debug 事件（请求消息预览与字符数/原始输出/解析结果/会话总数），前端 [debug-panel.tsx](src/components/game/debug-panel.tsx) 浮层展示
 - [x] **D5 模型配置文档** 💡 S：README 补充推荐模型/reasoning/结构化输出/前缀缓存说明
 
 ---
 
-## 批次 9 · 清理与风格 ⚪（✅ 已完成，#22 延后）
+## 批次 9 · 清理与风格 ⚪（✅ 全部完成）
 
 - [x] **#15 剩余死代码**：`GameUpdate.newChoices`、`SaveData.dialogueHistory` 已删（S4 已删 trim 函数）
 - [x] **#16 loadGameContext 原地 sort**：随批次 3 重写修复
@@ -158,7 +160,7 @@
 - [x] **#25 applySaveData 参数类型**：改 `SaveData`
 - [x] **#23 Sidebar 文案与遮罩**：和睦度文案纠正；遮罩点击关闭侧栏
 - [x] **choice.id React key 冲突**：`${choice.id}-${index}` 兜底
-- [ ] **#22 格式化工具链** ⏸ 延后：涉及全量重排版与组件文件名规范决策，需单独一次"仅格式化"提交
+- [x] **#22 格式化工具链** ✅（2026-09-12）：oxfmt 接入（单引号/无分号/无尾逗号/2 空格/80 列，对齐 belos-street；`.agents`/game-data*/markdown 不参与）+ `format`/`format:check` scripts，单独一次"仅格式化"提交（06a8fc4）；组件文件名统一 kebab-case（用户决策），单独重命名提交（684c941）
 - [x] **#18 会话无上限增长** ✅（2026-09-12）：SQLite 迁移后追加写入 O(1)（根治）；同批补查询侧封顶——`getConversation(saveId, limit?)`，chat 路由按需取最近 10/6/14 条，读档恢复与导出仍全量
 
 ---
