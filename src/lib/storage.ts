@@ -1,4 +1,4 @@
-import { generateId } from "./utils";
+import { generateId, toBigrams } from "./utils";
 import { loadStoryConfig } from "./game-data";
 import { extractNarration } from "./parser";
 import { getDb } from "./db";
@@ -163,6 +163,7 @@ export function deleteSave(id: string): boolean {
     .query("DELETE FROM saves WHERE id = ?")
     .run(validId);
   db.query("DELETE FROM conversations WHERE save_id = ?").run(validId);
+  db.query("DELETE FROM fts_memories WHERE save_id = ?").run(validId);
   return Number(result.changes) > 0;
 }
 
@@ -208,19 +209,104 @@ export function countConversation(saveId: string): number {
   return Number(row.total);
 }
 
+export interface MemoryHit {
+  day: number | null;
+  chapter: string | null;
+  content: string;
+}
+
+/**
+ * RAG 阶段 2：FTS5 全文检索历史剧情（中文 bigram 索引）。
+ * 查询串 = 玩家输入 + 状态实体（由调用方拼接）；bm25 相关度排序，
+ * 默认排除提示词窗口内已有的最近 10 条，命中内容对 assistant 提取叙述。
+ */
+export function searchMemories(
+  saveId: string,
+  query: string,
+  options?: { limit?: number; excludeRecent?: number },
+): MemoryHit[] {
+  const validId = normalizeSaveId(saveId);
+  if (!validId) return [];
+  const tokens = toBigrams(query).split(" ").filter(Boolean);
+  if (tokens.length === 0) return [];
+  const limit = options?.limit ?? 3;
+  const excludeRecent = options?.excludeRecent ?? 10;
+
+  const db = getDb();
+  const maxSeqRow = db
+    .query("SELECT MAX(seq) AS max FROM conversations WHERE save_id = ?")
+    .get(validId) as { max: number | null };
+  if (maxSeqRow.max === null) return [];
+
+  // FTS5 保留字安全：token 只含 CJK/字母数字（toBigrams 已剔除标点），加引号兜底
+  const match = tokens.map((t) => `"${t}"`).join(" OR ");
+  const rows = db
+    .query(
+      `SELECT c.seq, c.role, c.content, c.day, c.chapter
+       FROM fts_memories f
+       JOIN conversations c ON c.save_id = f.save_id AND c.seq = f.seq
+       WHERE fts_memories MATCH ? AND c.save_id = ? AND c.seq <= ?
+       ORDER BY bm25(fts_memories), c.seq ASC
+       LIMIT ?`,
+    )
+    .all(
+      match,
+      validId,
+      maxSeqRow.max - excludeRecent,
+      limit,
+    ) as {
+    seq: number;
+    role: string;
+    content: string;
+    day: number | null;
+    chapter: string | null;
+  }[];
+
+  return rows.map((row) => ({
+    day: row.day,
+    chapter: row.chapter,
+    content:
+      row.role === "assistant"
+        ? extractNarration(row.content)
+        : row.content,
+  }));
+}
+
 function appendConversationNow(validId: string, messages: Message[]) {
   if (messages.length === 0) return;
   const db = getDb();
-  const insert = db.query(
+  const nextSeq = db.query(
+    "SELECT COALESCE(MAX(seq), 0) + 1 AS next FROM conversations WHERE save_id = ?",
+  );
+  const insertConv = db.query(
     `INSERT INTO conversations (save_id, seq, role, content, day, chapter, created_at)
-     VALUES (?, (SELECT COALESCE(MAX(seq), 0) + 1 FROM conversations WHERE save_id = ?),
-             ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  );
+  const insertFts = db.query(
+    "INSERT INTO fts_memories (save_id, seq, text) VALUES (?, ?, ?)",
   );
   const now = new Date().toISOString();
   db.run("BEGIN");
   try {
+    let seq = (nextSeq.get(validId) as { next: number }).next;
     for (const m of messages) {
-      insert.run(validId, validId, m.role, m.content, m.day ?? null, m.chapter ?? null, now);
+      insertConv.run(
+        validId,
+        seq,
+        m.role,
+        m.content,
+        m.day ?? null,
+        m.chapter ?? null,
+        now,
+      );
+      // RAG 阶段 2：同步维护全文索引（assistant 为原始 JSON，提取叙述后建索引）
+      const text = toBigrams(
+        m.role === "assistant" ? extractNarration(m.content) : m.content,
+      );
+      if (text) {
+        insertFts.run(validId, seq, text);
+      }
+      seq += 1;
     }
     db.run("COMMIT");
   } catch (error) {
@@ -257,6 +343,9 @@ export function popLastTurn(saveId: string): Promise<boolean> {
       rows[0].seq,
       rows[1].seq,
     );
+    db.query(
+      "DELETE FROM fts_memories WHERE save_id = ? AND seq IN (?, ?)",
+    ).run(validId, rows[0].seq, rows[1].seq);
     return true;
   });
 }

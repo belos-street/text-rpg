@@ -2,6 +2,8 @@ import fs from "fs";
 import path from "path";
 import { createRequire } from "node:module";
 import type { Database } from "bun:sqlite";
+import { toBigrams } from "./utils";
+import { extractNarration } from "./parser";
 
 /**
  * SQLite 数据层（bun:sqlite 内置，零依赖）。
@@ -71,6 +73,11 @@ export function getDb(): Database {
       updated_at TEXT
     );
   `);
+  db.run(`
+    CREATE VIRTUAL TABLE IF NOT EXISTS fts_memories USING fts5(
+      save_id, seq UNINDEXED, text
+    );
+  `);
 
   if (isFirstInit) {
     try {
@@ -80,11 +87,61 @@ export function getDb(): Database {
     }
   }
 
+  try {
+    backfillFtsMemories(db);
+  } catch (error) {
+    console.error("[db] FTS 记忆索引回填失败:", error);
+  }
+
   dbInstance = db;
   return db;
 }
 
 const SAVE_FILE_RE = /^[a-f0-9]{20}\.json$/;
+
+/** 单条消息的索引文本：assistant 为原始 JSON，先提取叙述再建索引 */
+function indexTextFor(role: string, content: string): string {
+  return toBigrams(role === "assistant" ? extractNarration(content) : content);
+}
+
+/**
+ * RAG 阶段 2：conversations 与 fts_memories 行数不一致时自动回填
+ * （功能上线前的存量消息、或回填中途失败的场景），自愈式补齐。
+ */
+function backfillFtsMemories(db: Database) {
+  const counts = db
+    .query(
+      `SELECT
+         (SELECT COUNT(*) FROM conversations) AS total,
+         (SELECT COUNT(*) FROM fts_memories) AS indexed`,
+    )
+    .get() as { total: number; indexed: number };
+  if (counts.indexed >= counts.total) return;
+
+  const rows = db
+    .query(
+      `SELECT c.save_id, c.seq, c.role, c.content
+       FROM conversations c
+       LEFT JOIN fts_memories f ON f.save_id = c.save_id AND f.seq = c.seq
+       WHERE f.seq IS NULL`,
+    )
+    .all() as { save_id: string; seq: number; role: string; content: string }[];
+  const insert = db.query(
+    "INSERT INTO fts_memories (save_id, seq, text) VALUES (?, ?, ?)",
+  );
+  db.run("BEGIN");
+  try {
+    for (const row of rows) {
+      const text = indexTextFor(row.role, row.content);
+      if (text) insert.run(row.save_id, row.seq, text);
+    }
+    db.run("COMMIT");
+    console.log(`[db] FTS 记忆索引回填完成（${rows.length} 条）`);
+  } catch (error) {
+    db.run("ROLLBACK");
+    throw error;
+  }
+}
 
 /** 旧版 data/saves/*.json、data/conversations/*.json、data/global.json → SQLite */
 function migrateLegacyJson(dir: string, db: Database) {

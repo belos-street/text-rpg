@@ -243,6 +243,75 @@ describe("会话读写", () => {
     expect(storage.getConversation(created.id, 99)).toHaveLength(4);
   });
 
+  test("searchMemories 中文关键词命中早期剧情（RAG 阶段 2）", async () => {
+    const created = storage.createSave(makeSaveData("placeholder"));
+    const msgs = [
+      { role: "user" as const, content: "我在义诊摊前醒来" },
+      {
+        role: "assistant" as const,
+        content: JSON.stringify({
+          type: "game_update",
+          narration: "莉娅正在整理药箱，她抬起头对我微笑。",
+          choices: [],
+        }),
+      },
+      { role: "user" as const, content: "前往公会" },
+      {
+        role: "assistant" as const,
+        content: JSON.stringify({
+          type: "game_update",
+          narration: "公会大厅里贴满了悬赏任务。",
+          choices: [],
+        }),
+      },
+      { role: "user" as const, content: "回旅店休息" },
+      {
+        role: "assistant" as const,
+        content: JSON.stringify({
+          type: "game_update",
+          narration: "夜色渐深，我回到了旅店。",
+          choices: [],
+        }),
+      },
+    ];
+    await storage.appendConversation(created.id, msgs);
+
+    // 命中含"莉娅"的早期叙述，且 assistant 的 JSON 不出现在结果里
+    const hits = storage.searchMemories(created.id, "莉娅", {
+      excludeRecent: 0,
+    });
+    expect(hits.length).toBeGreaterThanOrEqual(1);
+    expect(hits[0].content).toContain("莉娅");
+    expect(hits[0].content).not.toContain("game_update");
+
+    // excludeRecent 排除窗口内的消息
+    const recentOnly = storage.searchMemories(created.id, "旅店", {
+      excludeRecent: 2,
+    });
+    expect(recentOnly).toEqual([]);
+  });
+
+  test("popLastTurn 同步清理 FTS 索引、deleteSave 清空索引", async () => {
+    const created = storage.createSave(makeSaveData("placeholder"));
+    await storage.appendConversation(created.id, [
+      { role: "user", content: "关于星纹吊坠的对话" },
+      {
+        role: "assistant",
+        content: JSON.stringify({
+          type: "game_update",
+          narration: "我攥紧了吊坠，想起莉娅的话。",
+          choices: [],
+        }),
+      },
+    ]);
+    // 重新生成（pop 最后一轮）后，索引里不再能搜到被移除的内容
+    await storage.popLastTurn(created.id);
+    expect(storage.searchMemories(created.id, "吊坠", { excludeRecent: 0 })).toEqual([]);
+
+    await storage.deleteSave(created.id);
+    expect(storage.searchMemories(created.id, "莉娅", { excludeRecent: 0 })).toEqual([]);
+  });
+
   test("deleteSave 联动删除会话", async () => {
     const created = storage.createSave(makeSaveData("placeholder"));
     await storage.appendConversation(created.id, [{ role: "user", content: "x" }]);

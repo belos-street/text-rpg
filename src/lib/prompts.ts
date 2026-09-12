@@ -162,6 +162,7 @@ export function buildMessages(
   save: SaveData | null,
   userInput: string,
   dialogueHistory: { role: string; content: string }[],
+  relatedMemories?: { day: number | null; chapter: string | null; content: string }[],
 ): { role: "system" | "user" | "assistant"; content: string }[] {
   const isFirstMessage = !save || dialogueHistory.length === 0;
   const chapterKey = chapterKeyOf(save?.chapter);
@@ -187,8 +188,23 @@ export function buildMessages(
 
   // 易变状态放在消息序列末尾（而非 system 尾部）：
   // 静态前缀 + 历史保持字节稳定，可被前缀缓存命中，每回合只需 prefill 新增部分
+  // RAG 阶段 2：FTS 检索到的早期剧情片段一并注入（易变，随状态块走）
+  const recallBlock =
+    relatedMemories && relatedMemories.length > 0
+      ? `【相关回忆】（更早剧情中与本次行动相关的片段，仅供衔接参考）\n${relatedMemories
+          .map(
+            (m) =>
+              `- （第${m.day ?? "?"}天${m.chapter ? `·${m.chapter}` : ""}）${
+                m.content.length > 150
+                  ? m.content.slice(0, 150) + "…"
+                  : m.content
+              }`,
+          )
+          .join("\n")}\n\n`
+      : "";
+
   const stateBlock = save
-    ? `【当前游戏状态】\n${loadGameContext(save)}\n\n`
+    ? `${recallBlock}【当前游戏状态】\n${loadGameContext(save)}\n\n`
     : "";
 
   if (userInput) {

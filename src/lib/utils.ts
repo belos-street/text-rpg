@@ -21,3 +21,18 @@ export function generateId(): string {
     return out;
   }
 }
+
+// FTS5 的默认分词器不切分中文，按相邻两字（bigram）建索引是成熟方案：
+// 2 字角色名（如"莉娅"）也能作为完整 token 精确命中
+const NOISE_CHARS =
+  /[\s\u3000-\u303F\uFF00-\uFFEF!"#$%&'()*+,\-./:;<=>?@[\]^_`{|}~「」『』【】（）·……——""''、。！？：；]/g;
+
+/** 去除标点空白后按相邻两字切分，空格连接（供 FTS5 索引与查询构造共用） */
+export function toBigrams(text: string): string {
+  const clean = text.replace(NOISE_CHARS, "");
+  const tokens: string[] = [];
+  for (let i = 0; i < clean.length - 1; i++) {
+    tokens.push(clean.slice(i, i + 2));
+  }
+  return tokens.join(" ");
+}

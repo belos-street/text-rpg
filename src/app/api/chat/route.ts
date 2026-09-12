@@ -10,6 +10,8 @@ import {
   countConversation,
   summarizeConversation,
   popLastTurn,
+  searchMemories,
+  type MemoryHit,
 } from "@/lib/storage";
 import { summarizeSaveIfStale } from "@/lib/summary";
 import { loadStoryConfig } from "@/lib/game-data";
@@ -124,6 +126,27 @@ export async function POST(req: NextRequest) {
   const dialogueHistory = getConversation(save.id, 10);
   const storyConfig = loadStoryConfig();
 
+  // RAG 阶段 2：FTS 检索早期剧情片段（AI_RECALL=off 可关；消息总数超阈值才启用，
+  // 更早的内容才叫"回忆"，提示词窗口内的不需要检索）
+  const RECALL_MIN_MESSAGES = Number(process.env.AI_RECALL_MIN || 14);
+  let relatedMemories: MemoryHit[] = [];
+  if (
+    message &&
+    !isRegenerate &&
+    (process.env.AI_RECALL || "on").toLowerCase() !== "off" &&
+    countConversation(save.id) > RECALL_MIN_MESSAGES
+  ) {
+    const recallQuery = [
+      message,
+      ...save.relations
+        .filter((r) => r.affection > 0)
+        .slice(0, 5)
+        .map((r) => r.characterName),
+      save.location,
+    ].join(" ");
+    relatedMemories = searchMemories(save.id, recallQuery);
+  }
+
   // C2 固定开场序章：新档且配置了 openingNarration 时零延迟返回，不调用 LLM
   if (!message && dialogueHistory.length === 0 && storyConfig.openingNarration) {
     const opening = storyConfig.openingNarration;
@@ -159,7 +182,12 @@ export async function POST(req: NextRequest) {
     return new Response(stream, { headers: sseHeaders });
   }
 
-  const messages = buildMessages(save, message || "", dialogueHistory);
+  const messages = buildMessages(
+    save,
+    message || "",
+    dialogueHistory,
+    relatedMemories,
+  );
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -407,6 +435,7 @@ export async function POST(req: NextRequest) {
                     rawOutputChars: fullContent.length,
                     parsedOk: !!parsed,
                     choicesCount: parsed?.choices?.length ?? 0,
+                    relatedMemories: relatedMemories.length,
                     totalMessages,
                   },
                 })}\n\n`,
